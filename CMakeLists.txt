@@ -56,6 +56,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ./AlfredoCRSF/src/AlfredoCRSF.cpp
     ./AlfredoCRSF/src/crc8.cpp
     ./SPL06-001/SPL06-001.cpp
+    ./Core/Src/stm32_arduino_compatibility.cpp
+    ./Core/Src/ublox_gnss_example.cpp
+    ./Core/Src/ublox_gnss_wrapper.cpp
+    ./SparkFun_u-blox_GNSS_Arduino_Library/src/SparkFun_u-blox_GNSS_Arduino_Library.cpp
 )
 
 # Add include paths
@@ -66,6 +70,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 	./AlfredoCRSF/src
     ./Drivers/STM32F1xx_HAL_Driver/Inc
     ./Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
+    ./SparkFun_u-blox_GNSS_Arduino_Library/src
 )
 
 # Add project symbols (macros)

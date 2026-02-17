@@ -1,4 +1,9 @@
+#ifndef USER_MAIN_CPP_H
+#define USER_MAIN_CPP_H
+
 #include "user_main.h"
+#include "myHalfSerial_X.h"
+#include "ublox_gnss_example.h"
 //#include <cstddef>
 //#include <cstdint>
 //#include <stdint.h>
@@ -12,7 +17,7 @@
 #include "../SPL06-001/SPL06-001.h"
 #include "../SPL06-001/spl06_001_glue.h" 
 
-#include "myHalfSerial_X.h"
+
 
 #define CRSF_BATTERY_SENSOR_CELLS_MAX 12
 #define BAT_ADC_Oversampling_Ratio 16  // Must match ADC oversampling ratio
@@ -33,7 +38,16 @@ TIM_HandleTypeDef* Timer_map[num_PWM_channels]={&htim2,       &htim2,       &hti
 unsigned int PWM_Channelmap[num_PWM_channels]={ TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4};
 //   Servo Channel number                             1                 2                 3                 4                 5                 6                 7                 8                 9                 10  
 #endif
+
+
+#ifdef __cplusplus
 extern "C" {
+#endif
+
+void gnss_module_init(void);
+void gnss_module_update(uint32_t millis_now);
+
+
 
 #define TARGET_MATEKSYS_CRSF_PWM_V10
 TwoWire BaroWire(SDA2, SCL2);	
@@ -66,6 +80,7 @@ STM32Stream* crsfSerial = nullptr;  // Will be initialized in user_init()
 AlfredoCRSF crsf;
 volatile uint8_t ready_RX_UART2 = 1;
 volatile bool ready_TX_UART2 = 1;
+bool huart3_IT_ready = 1;
 volatile uint8_t ready_RX_UART1 = 1;
 volatile bool ready_TX_UART1 = 1;
 volatile bool isCRSFLinkUp = false;
@@ -85,10 +100,18 @@ static float vario=0,filt_alt_AGL=0;
 static double filt_vario=0, filt_alt_ASL=0;
 static uint32_t GND_alt_count=0;
 
+// GNSS module state variables
+static bool gnss_initialized = false;
+static uint32_t gnss_last_update_time = 0;
+// static const uint32_t GNSS_UPDATE_INTERVAL_MS = 100;  // Update every 100ms (10Hz) - reserved for future use
+static uint32_t gnss_last_print_time = 0;
+// static const uint32_t GNSS_PRINT_INTERVAL_MS = 2000;  // Print every 2 seconds - reserved for future use
+
 
 void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
+//  Serial_InitUART2();  // Initialize Serial (UART2) for debug output
   serial2TX.init(&huart2, (bool*)&ready_TX_UART2, true,256, 4  );
   // Ensure UART is initialized before creating STM32Stream
   crsfSerial = new STM32Stream(&huart1);
@@ -97,6 +120,7 @@ void user_init(void)  // same as the "arduino setup()" function
   HAL_Delay(20);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_buffer, 2);
 //  setupBaroSensor();
+  gnss_module_init();
 }
 
 
@@ -317,17 +341,12 @@ void baroSerialDisplayTask(uint32_t millis_now){
   floatToString(float_string_buffer, sizeof(float_string_buffer), baroTemperature);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Temperature = %s*C\n\r", float_string_buffer);
   serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-  // snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Pressure = %4dhPa\n\r", (int)baroPressure);
-  // writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   floatToString(float_string_buffer, sizeof(float_string_buffer),filt_alt_AGL);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Approx altitude ASL = %3dm ; Altitude AGL = %sm\n\r", (int)filt_alt_ASL,float_string_buffer); 
-  //writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   floatToString(float_string_buffer, sizeof(float_string_buffer), filt_vario);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Vario = %sm/s\n\r", float_string_buffer);
-  //writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-  //writeSerialTXFifoBuffer((uint8_t*)"\n\r", 2);
   serial2TX.write((uint8_t*)"\n\r", 2);
 }
 
@@ -364,6 +383,44 @@ void baroProcessingTask(uint32_t millis_now){
   serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer)); // Send baro processing time to UART2 for debugging
 }
 
+void gnss_module_init(void) {
+  //  printf("\n>>> Initializing GNSS Module...\n");
+  snprintf(debug_str_buffer, sizeof(debug_str_buffer),"\n>>> Initializing GNSS Module...\r\n");
+  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  delay(1000); // Small delay to ensure UART is ready before initialization messages are sent
+    
+    // This call blocks for ~1-2 seconds while waiting for module response
+    // Safe to call during initialization
+    gnss_initialized = gnss_init(&huart3, &huart3_IT_ready);
+    
+    if (gnss_initialized) {
+        // printf(">>> GNSS Module: INITIALIZED OK\n");
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZED OK\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        // printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\n");
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        gnss_last_update_time = millis();
+        gnss_last_print_time = millis();
+    } else {
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZATION FAILED\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Check:\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  1. UART3 is enabled in STM32CubeMX\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  2. Baud rate matches module (38400 or 115200)\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  3. GNSS module is powered and connected\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  4. RX antenna is connected\r\n\r\n");
+        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+    }
+}
 
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
+
+#endif // USER_MAIN_CPP_H

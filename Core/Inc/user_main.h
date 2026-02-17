@@ -11,6 +11,11 @@
 #include "main.h"
 #include "platform_abstraction.h"
 #include <stdint.h>
+#include "platform_abstraction.h"
+
+//#include "myHalfSerial_X.h"
+//#include "../SparkFun_u-blox_GNSS_Arduino_Library/src/SparkFun_u-blox_GNSS_Arduino_Library.h"
+#include "ublox_gnss_example.h"
 
 #define num_PWM_channels 10
 
@@ -20,6 +25,7 @@ extern TIM_HandleTypeDef htim3;
 //extern TIM_HandleTypeDef htim16;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart3;
 
 extern TIM_HandleTypeDef* Timer_map[num_PWM_channels];
 extern unsigned int PWM_Channelmap[num_PWM_channels];
@@ -28,6 +34,11 @@ extern unsigned int PWM_Channelmap[num_PWM_channels];
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+void gnss_module_init(void);
+void gnss_module_update(uint32_t millis_now);
+void Serial_InitUART2(void);  // Initialize Serial (UART2) for debug output
+
 void user_init(void);
 void user_loop_step(void);
 //static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_lengt);
