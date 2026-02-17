@@ -5,6 +5,8 @@
 #ifndef USER_MAIN_H
 #define USER_MAIN_H
 
+#define TARGET_BLUEPILL
+// #define TARGET_MATEKSYS_CRSF_PWM_V10
 
 #include "main.h"
 #include "platform_abstraction.h"
