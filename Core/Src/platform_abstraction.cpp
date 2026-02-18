@@ -53,7 +53,8 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        if (serial2TX.TX_callBackPull()==0) { // get more data to send if available in FIFO
+        if (serial2TX.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
+//        {                                   // otherwise it might disturb other time critical interrupt routines
             ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
         } 
     }
