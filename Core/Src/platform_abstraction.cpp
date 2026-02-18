@@ -15,7 +15,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 //#include "stm32g0xx_hal_adc.h"
 //#include "stm32g0xx_hal_i2c.h"
 //#include "stm32g0xx_hal_uart.h"
-#include "myHalfSerial_X.h"
+#include "mySerial.h"
 #include <cstdint>
 #include <cstring>
 #include <sys/_intsup.h>
@@ -35,7 +35,7 @@ extern volatile uint8_t huart3_IT_ready;
 extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
-extern myHalfSerial_X serial2TX;
+extern mySerial serial2;
 
 char UART1_TX_Buffer[64];
 
@@ -53,7 +53,7 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        if (serial2TX.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
+        if (serial2.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
 //        {                                   // otherwise it might disturb other time critical interrupt routines
             ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
         } 

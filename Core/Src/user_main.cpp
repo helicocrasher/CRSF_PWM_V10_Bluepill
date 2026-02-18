@@ -2,18 +2,16 @@
 #define USER_MAIN_CPP_H
 
 #include "user_main.h"
-#include "myHalfSerial_X.h"
+#include "mySerial.h"
 #include "ublox_gnss_example.h"
 //#include <cstddef>
-//#include <cstdint>
-//#include <stdint.h>
+
 #include <cstddef>
 #include <stdint.h>
 #include <stdio.h>
-//#include <sys/_intsup.h>
 #include "../AlfredoCRSF/src/AlfredoCRSF.h"
 #include "platform_abstraction.h"
-//#include "stm32f1xx_hal.h"
+
 
 //#include "stm32g0xx_hal_adc.h"
 #include "../SPL06-001/SPL06-001.h"
@@ -55,7 +53,7 @@ void gnss_module_update(uint32_t millis_now);
 #define TARGET_MATEKSYS_CRSF_PWM_V10
 TwoWire BaroWire(SDA2, SCL2);	
 SPL06 BaroSensor(&BaroWire); 
-myHalfSerial_X serial2TX;
+mySerial serial2;
 void setupBaroSensor();  
 void baroProcessingTask(uint32_t millis_now);
 void baroSerialDisplayTask(uint32_t millis_now);
@@ -83,7 +81,7 @@ int8_t send_UART2(void);
 extern ADC_HandleTypeDef hadc1;
 STM32Stream* crsfSerial = nullptr;  // Will be initialized in user_init()
 AlfredoCRSF crsf;
-volatile uint8_t ready_RX_UART2 = 1;
+volatile bool ready_RX_UART2 = 1;
 volatile bool ready_TX_UART2 = 1;
 bool huart3_IT_ready = 1;
 volatile uint8_t ready_RX_UART1 = 1;
@@ -116,10 +114,8 @@ static uint32_t gnss_last_print_time = 0;
 void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
-//  Serial_InitUART2();  // Initialize Serial (UART2) for debug output
-  serial2TX.init(&huart2, (bool*)&ready_TX_UART2, true,256, 16  );
-  // Ensure UART is initialized before creating STM32Stream
-  crsfSerial = new STM32Stream(&huart1);
+  serial2.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2,256, 16  );
+  crsfSerial = new STM32Stream(&huart1); // Ensure UART is initialized before creating STM32Stream
   crsf.begin(*crsfSerial);
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_Delay(20);
@@ -133,7 +129,6 @@ void user_loop_step(void) // same as the "arduino loop()" function
 {
   static uint32_t  actual_millis=0;
 
-
   actual_millis = HAL_GetTick();
   crsf.update();
   CRSF_reception_watchdog_task(actual_millis);
@@ -144,9 +139,7 @@ void user_loop_step(void) // same as the "arduino loop()" function
 //  baroSerialDisplayTask(actual_millis);
   telemetry_transmission_task(actual_millis);
   error_handling_task();
-//  serial2TX.updateSerial();
-//  gnssUpdateTask(actual_millis);
-//  gnssDisplayTask(actual_millis);
+//  serial2.updateSerial();
   main_loop_cnt++;
 //  HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
 }
@@ -231,12 +224,11 @@ static void pwm_update_task(uint32_t actual_millis) {
 
   if (!isCRSFLinkUp && crsf.isLinkUp()) { // Link just came up - initialize PWM outputs
     isCRSFLinkUp = true;
-    for (uint8_t channel=0; channel<num_PWM_channels; channel++){
-//      user_pwm_setvalue(channel, 1500); // Set all channels to neutral on link up
+    for (uint8_t channel=0; channel<num_PWM_channels; channel++){ // start up all PWMs & outouts
       HAL_TIM_PWM_Start(Timer_map[channel], PWM_Channelmap[channel]);
     }
     return;
-  }
+  } // set PWM values from CRSF to PWM channel
   static uint32_t servo_update_millis =0; 
   if (actual_millis-servo_update_millis <1) return; // Update every ms to minimize delay between CRSF reception and PWM output
   servo_update_millis = actual_millis;
@@ -254,11 +246,11 @@ static void LED_and_debugSerial_task(uint32_t actual_millis) {
 
   if (actual_millis - last_debugTerm_millis < 200) return;
   last_debugTerm_millis = actual_millis;
-//  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_14 );
-  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2 );
+//  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_14 );        //TARGET_MATEK
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2 ); // TARGET_BluePill
   
   snprintf(debug_str_buffer, DBG_STRINGBUFSIZE, "%7lu : ELRS_UP = %1d  / CH1 = %4d CH2 =  %4d, Restart = %4lu ADC_period = %4lu\r\n", (unsigned long) main_loop_cnt, crsf.isLinkUp(), ch1, ch2, (unsigned long)crsfSerialRestartRX_counter,(unsigned long)ADC_period);
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
 }
 
 static void error_handling_task(void) {
@@ -301,14 +293,14 @@ void setupBaroSensor(){   // SPL06-001 sensor version
   //unsigned status = BaroSensor.begin(SPL06_ADDRESS_ALT);
   if (!status) {
     snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Could not find a valid SPL06-001 sensor, check wiring or try a different address!\\n\r");
-    serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+    serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
     {
       
       snprintf(debug_str_buffer, sizeof(debug_str_buffer), "SensorID was:   0x%02X", BaroSensor.sensorID());
-      serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+      serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
     }
     snprintf(debug_str_buffer, sizeof(debug_str_buffer), "        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085");
-    serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+    serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
     while (1) HAL_Delay(10);
   }
   BaroSensor.setSampling(SPL06::MODE_BACKGND_BOTH,
@@ -318,7 +310,7 @@ void setupBaroSensor(){   // SPL06-001 sensor version
                           SPL06::RATE_X16);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "SPL06-001 ready");
 //  writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));  
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));  
 }
 
 
@@ -367,14 +359,14 @@ void baroSerialDisplayTask(uint32_t millis_now){
 
   floatToString(float_string_buffer, sizeof(float_string_buffer), baroTemperature);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Temperature = %s*C\n\r", float_string_buffer);
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   floatToString(float_string_buffer, sizeof(float_string_buffer),filt_alt_AGL);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Approx altitude ASL = %3dm ; Altitude AGL = %sm\n\r", (int)filt_alt_ASL,float_string_buffer); 
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   floatToString(float_string_buffer, sizeof(float_string_buffer), filt_vario);
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Vario = %sm/s\n\r", float_string_buffer);
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-  serial2TX.write((uint8_t*)"\n\r", 2);
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  serial2.write((uint8_t*)"\n\r", 2);
 }
 
 void baroProcessingTask(uint32_t millis_now){
@@ -406,14 +398,14 @@ void baroProcessingTask(uint32_t millis_now){
   millis_end=HAL_GetTick();
   volatile uint32_t baro_processing_millis = millis_end - millis_start; // For debugging - check how long baro processing takes and if it causes delays in PWM output or CRSF reception
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Baro processing time: %lu ms\n\r", (unsigned long)baro_processing_millis);
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer)); // Send baro processing time to UART2 for debugging
+  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer)); // Send baro processing time to UART2 for debugging
 }
 
 void gnss_module_init(void) {
   //  printf("\n>>> Initializing GNSS Module...\n");
   snprintf(debug_str_buffer, sizeof(debug_str_buffer),"\n\r>>> Initializing GNSS Module...\r\n");
   size_t len = strlen(debug_str_buffer);
-  serial2TX.write((uint8_t*)debug_str_buffer, len);
+  serial2.write((uint8_t*)debug_str_buffer, len);
   delay(1000); // Small delay to ensure UART is ready before initialization messages are sent
     
     // This call blocks for ~1-2 seconds while waiting for module response
@@ -423,28 +415,29 @@ void gnss_module_init(void) {
     if (gnss_initialized) {
         // printf(">>> GNSS Module: INITIALIZED OK\n");
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZED OK\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         // printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\n");
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         gnss_last_update_time = millis();
         gnss_last_print_time = millis();
   
     } else {
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZATION FAILED\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Check:\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  1. UART3 is enabled in STM32CubeMX\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  2. Baud rate matches module (38400 or 115200)\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  3. GNSS module is powered and connected\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  4. RX antenna is connected\r\n\r\n");
-        serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
     }
     delay(1000); // Small delay to ensure UART messages are sent before any further processing
+    delay(1 );
 }
 
 

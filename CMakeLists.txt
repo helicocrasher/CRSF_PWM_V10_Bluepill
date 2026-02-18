@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ./Core/Src/user_main.cpp
     ./Core/Src/platform_abstraction.cpp
     ./Core/Src/myHalfSerial_X.cpp
+    ./Core/Src/mySerial.cpp
     ./AlfredoCRSF/src/AlfredoCRSF.cpp
     ./AlfredoCRSF/src/crc8.cpp
     ./SPL06-001/SPL06-001.cpp
