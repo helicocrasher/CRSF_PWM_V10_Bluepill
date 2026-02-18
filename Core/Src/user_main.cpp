@@ -39,27 +39,45 @@ TIM_HandleTypeDef* Timer_map[num_PWM_channels]={&htim2,       &htim2,       &hti
 unsigned int PWM_Channelmap[num_PWM_channels]={ TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4};
 //   Servo Channel number                             1                 2                 3                 4                 5                 6                 7                 8                 9                 10  
 #endif
+mySerial serial2, gnssSerial;
+
+
+  
+extern "C" int __io_putchar(int ch){
+  uint8_t bla = (uint8_t) ch;
+  serial2.write((uint8_t*) &bla,1 );
+  return bla;
+}
 
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 void gnss_module_init(void);
 void gnss_module_update(uint32_t millis_now);
 
 
-
 #define TARGET_MATEKSYS_CRSF_PWM_V10
 TwoWire BaroWire(SDA2, SCL2);	
 SPL06 BaroSensor(&BaroWire); 
-mySerial serial2;
+//mySerial serial2, gnssSerial;
 void setupBaroSensor();  
 void baroProcessingTask(uint32_t millis_now);
 void baroSerialDisplayTask(uint32_t millis_now);
 void telemetrySendBaroAltitude(float altitude);
 void telemetrySendVario( float verticalspd);
 
+
+/*
+extern "C" int serial2_putchar(int ch)
+{
+    uint8_t c = (uint8_t)ch;
+    serial2.write(&c, 1);
+    return ch;
+}
+*/
 
 //user_loop tasks - timed - prototype declarations
 static void CRSF_reception_watchdog_task(uint32_t actual_millis);
@@ -81,9 +99,11 @@ int8_t send_UART2(void);
 extern ADC_HandleTypeDef hadc1;
 STM32Stream* crsfSerial = nullptr;  // Will be initialized in user_init()
 AlfredoCRSF crsf;
-volatile bool ready_RX_UART2 = 1;
 volatile bool ready_TX_UART2 = 1;
-bool huart3_IT_ready = 1;
+volatile bool ready_RX_UART2 = 1;
+
+volatile bool ready_TX_UART3 = 1;
+volatile bool ready_RX_UART3 = 1;
 volatile uint8_t ready_RX_UART1 = 1;
 volatile bool ready_TX_UART1 = 1;
 volatile bool isCRSFLinkUp = false;
@@ -249,8 +269,7 @@ static void LED_and_debugSerial_task(uint32_t actual_millis) {
 //  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_14 );        //TARGET_MATEK
   HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2 ); // TARGET_BluePill
   
-  snprintf(debug_str_buffer, DBG_STRINGBUFSIZE, "%7lu : ELRS_UP = %1d  / CH1 = %4d CH2 =  %4d, Restart = %4lu ADC_period = %4lu\r\n", (unsigned long) main_loop_cnt, crsf.isLinkUp(), ch1, ch2, (unsigned long)crsfSerialRestartRX_counter,(unsigned long)ADC_period);
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  printf("%7lu : ELRS_UP = %1d  / CH1 = %4d CH2 =  %4d, Restart = %4lu ADC_period = %4lu\r\n", (unsigned long)main_loop_cnt, crsf.isLinkUp(), ch1, ch2, (unsigned long)crsfSerialRestartRX_counter, (unsigned long)ADC_period);
 }
 
 static void error_handling_task(void) {
@@ -292,15 +311,12 @@ void setupBaroSensor(){   // SPL06-001 sensor version
   status = BaroSensor.begin(SPL06_ADDRESS_ALT,SPL06_PRODID);
   //unsigned status = BaroSensor.begin(SPL06_ADDRESS_ALT);
   if (!status) {
-    snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Could not find a valid SPL06-001 sensor, check wiring or try a different address!\\n\r");
-    serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+    printf("Could not find a valid SPL06-001 sensor, check wiring or try a different address!\\n\r");
     {
       
-      snprintf(debug_str_buffer, sizeof(debug_str_buffer), "SensorID was:   0x%02X", BaroSensor.sensorID());
-      serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+      printf("SensorID was:   0x%02X", BaroSensor.sensorID());
     }
-    snprintf(debug_str_buffer, sizeof(debug_str_buffer), "        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085");
-    serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+    printf("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085");
     while (1) HAL_Delay(10);
   }
   BaroSensor.setSampling(SPL06::MODE_BACKGND_BOTH,
@@ -308,9 +324,7 @@ void setupBaroSensor(){   // SPL06-001 sensor version
                           SPL06::SAMPLING_X16,
                           SPL06::RATE_X16,
                           SPL06::RATE_X16);
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer), "SPL06-001 ready");
-//  writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));  
+  printf("SPL06-001 ready");
 }
 
 
@@ -358,14 +372,11 @@ void baroSerialDisplayTask(uint32_t millis_now){
   static char float_string_buffer[8];
 
   floatToString(float_string_buffer, sizeof(float_string_buffer), baroTemperature);
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Temperature = %s*C\n\r", float_string_buffer);
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  printf("Temperature = %s*C\n\r", float_string_buffer);
   floatToString(float_string_buffer, sizeof(float_string_buffer),filt_alt_AGL);
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Approx altitude ASL = %3dm ; Altitude AGL = %sm\n\r", (int)filt_alt_ASL,float_string_buffer); 
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  printf("Approx altitude ASL = %3dm ; Altitude AGL = %sm\n\r", (int)filt_alt_ASL, float_string_buffer);
   floatToString(float_string_buffer, sizeof(float_string_buffer), filt_vario);
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Vario = %sm/s\n\r", float_string_buffer);
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  printf("Vario = %sm/s\n\r", float_string_buffer);
   serial2.write((uint8_t*)"\n\r", 2);
 }
 
@@ -397,44 +408,28 @@ void baroProcessingTask(uint32_t millis_now){
   loop_counter++;
   millis_end=HAL_GetTick();
   volatile uint32_t baro_processing_millis = millis_end - millis_start; // For debugging - check how long baro processing takes and if it causes delays in PWM output or CRSF reception
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Baro processing time: %lu ms\n\r", (unsigned long)baro_processing_millis);
-  serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer)); // Send baro processing time to UART2 for debugging
+  printf("Baro processing time: %lu ms\n\r", (unsigned long)baro_processing_millis);
 }
 
 void gnss_module_init(void) {
-  //  printf("\n>>> Initializing GNSS Module...\n");
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer),"\n\r>>> Initializing GNSS Module...\r\n");
-  size_t len = strlen(debug_str_buffer);
-  serial2.write((uint8_t*)debug_str_buffer, len);
-  delay(1000); // Small delay to ensure UART is ready before initialization messages are sent
+  printf("\n>>> Initializing GNSS Module...\n\r");
     
     // This call blocks for ~1-2 seconds while waiting for module response
     // Safe to call during initialization
-    gnss_initialized = gnss_init(&huart3, &huart3_IT_ready);
-    
+    gnss_initialized = gnss_init(&huart3,(bool*) &ready_TX_UART3, (bool*)&ready_RX_UART3);
     if (gnss_initialized) {
-        // printf(">>> GNSS Module: INITIALIZED OK\n");
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZED OK\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        // printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\n");
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        gnss_last_update_time = millis();
-        gnss_last_print_time = millis();
-  
-    } else {
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZATION FAILED\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> Check:\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  1. UART3 is enabled in STM32CubeMX\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  2. Baud rate matches module (38400 or 115200)\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  3. GNSS module is powered and connected\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
-        snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  4. RX antenna is connected\r\n\r\n");
-        serial2.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+      printf(">>> GNSS Module: INITIALIZED OK\n\r");
+      printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\r");
+      gnss_last_update_time = millis();
+      gnss_last_print_time = millis();
+    } 
+    else {
+      printf( ">>> GNSS Module: INITIALIZATION FAILED\r\n");
+      printf( ">>> Check:\r\n");
+      printf( ">>>  1. UART3 is enabled in STM32CubeMX\r\n");
+      printf( ">>>  2. Baud rate matches module (38400 or 115200)\r\n");
+      printf( ">>>  3. GNSS module is powered and connected\r\n");
+      printf( ">>>  4. RX antenna is connected\r\n\r\n");
     }
     delay(1000); // Small delay to ensure UART messages are sent before any further processing
     delay(1 );

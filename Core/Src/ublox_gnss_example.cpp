@@ -4,8 +4,9 @@
  */
 
 #include <stdio.h>
+#include "mySerial.h"
 #include "ublox_gnss_wrapper.h"
-#include "myHalfSerial_X.h"
+//#include "myHalfSerial_X.h"
 #include "stm32_arduino_compatibility.h"
 
 #ifdef __cplusplus
@@ -16,7 +17,7 @@ extern "C" {
 // Global Variables
 // ============================================================================
 
-static myHalfSerial_X gnssSerial;
+extern mySerial gnssSerial;
 static STM32Serial gnssSerialWrapper(&gnssSerial);
 static UbloxGNSSWrapper *pGNSS = nullptr;
 static uint32_t lastUpdateTime = 0;
@@ -26,12 +27,12 @@ static const uint32_t UPDATE_INTERVAL_MS = 100;
 // Public API Implementation
 // ============================================================================
 
-bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_IT_ready) {
+bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready) {
     if (!huart3) {
         return false;
     }
     
-    gnssSerial.init(huart3, huart_IT_ready, false, 256, 4);
+    gnssSerial.init(huart3, huart_TX_ready, huart_RX_ready, 256, 4);
     pSerial = &gnssSerialWrapper;
     
     pGNSS = new UbloxGNSSWrapper(gnssSerialWrapper);
@@ -40,11 +41,11 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_IT_ready) {
     }
     
     if (!pGNSS->begin(2000)) {
-        printf("GNSS init failed\n");
+        printf("GNSS init failed\n\r");
         return false;
     }
     
-    printf("GNSS initialized successfully\n");
+    printf("GNSS initialized successfully\n\r");
     lastUpdateTime = millis();
     return true;
 }

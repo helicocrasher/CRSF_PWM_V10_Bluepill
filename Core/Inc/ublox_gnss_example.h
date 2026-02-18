@@ -70,10 +70,11 @@ extern "C" {
  * Call once during setup, after UART3 is initialized
  * 
  * @param huart3: STM32 UART3 HAL handle
- * @param huart_IT_ready: Pointer to interrupt ready flag
+ * @param huart_TX_ready: Pointer to transmit interrupt ready flag
+ * @param huart_RX_ready: Pointer to receive interrupt ready flag
  * @return true if successful, false on initialization error
  */
-bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_IT_ready);
+bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready, bool *huart_RX_ready);
 
 /**
  * @brief Update GNSS data (NON-BLOCKING)

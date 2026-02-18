@@ -16,9 +16,11 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 //#include "stm32g0xx_hal_i2c.h"
 //#include "stm32g0xx_hal_uart.h"
 #include "mySerial.h"
+#include "stm32f103xb.h"
 #include <cstdint>
 #include <cstring>
 #include <sys/_intsup.h>
+#include "ublox_gnss_example.h"
 
 // Global pointer for HAL callback
 STM32Stream* g_uartStream = nullptr;
@@ -31,11 +33,13 @@ extern volatile uint8_t ready_RX_UART1;
 extern volatile uint8_t ready_TX_UART1;
 extern volatile uint8_t ready_TX_UART2; 
 extern volatile uint8_t ready_RX_UART2; 
-extern volatile uint8_t huart3_IT_ready;
+extern volatile uint8_t ready_TX_UART3; 
+extern volatile uint8_t ready_RX_UART3; 
 extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
 extern mySerial serial2;
+extern mySerial gnssSerial;
 
 char UART1_TX_Buffer[64];
 
@@ -54,12 +58,18 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
         if (serial2.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
-//        {                                   // otherwise it might disturb other time critical interrupt routines
+                                            // otherwise it might disturb other time critical interrupt routines
             ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
         } 
     }
     if (huart->Instance == USART1) {
         ready_TX_UART1 = 1; 
+    }
+    if (huart->Instance == USART3 ){
+        if (gnssSerial.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
+//        {   
+            ready_TX_UART3 = 1;
+        }
     }
 }
 
@@ -81,9 +91,9 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         HAL_UART_Receive_IT(huart, (uint8_t*)&ready_RX_UART2, 1);
     }
     if (huart == &huart3) {
-        huart3_IT_ready = 1;
+        ready_RX_UART3 = 1;
         // Re-arm RX interrupt for next byte
-        HAL_UART_Receive_IT(huart, (uint8_t*)&huart3_IT_ready, 1);
+        HAL_UART_Receive_IT(huart, (uint8_t*)&ready_RX_UART3, 1);
     }
 }
 

@@ -231,10 +231,10 @@ public:
 
 class STM32Serial : public Stream {
 private:
-    class myHalfSerial_X *serialPort;
+    class mySerial *serialPort;
     
 public:
-    STM32Serial(class myHalfSerial_X *port);
+    STM32Serial(class mySerial *port);
     virtual ~STM32Serial() {}
     
     size_t write(uint8_t c) override;

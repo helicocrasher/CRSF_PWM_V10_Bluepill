@@ -4,7 +4,7 @@
  */
 
 #include "stm32_arduino_compatibility.h"
-#include "myHalfSerial_X.h"
+#include "mySerial.h"
 
 // ============================================================================
 // Global Variables
@@ -70,7 +70,7 @@ void delayMicroseconds(uint32_t us) {
 // STM32Serial Implementation
 // ============================================================================
 
-STM32Serial::STM32Serial(myHalfSerial_X *port) : serialPort(port) {
+STM32Serial::STM32Serial(mySerial *port) : serialPort(port) {
 }
 
 size_t STM32Serial::write(uint8_t c) {
@@ -105,16 +105,16 @@ void STM32Serial::flush(void) {
 // ============================================================================
 
 // Global UART2 debug instance
-static myHalfSerial_X g_debug_uart2_instance;
+static mySerial g_debug_uart2_instance;
 static STM32Serial g_Serial_instance(&g_debug_uart2_instance);
 STM32Serial *Serial_ptr = nullptr;  // Will be initialized by Serial_InitUART2
 
 void Serial_InitUART2(void) {
     extern UART_HandleTypeDef huart2;
-    extern volatile bool ready_TX_UART2;
+    extern volatile bool ready_TX_UART2,ready_RX_UART2;
     
     // Initialize the UART2 instance with UART2 handle
-    g_debug_uart2_instance.init(&huart2, (bool*)&ready_TX_UART2, true, 256, 4);
+    g_debug_uart2_instance.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2, 256, 4);
     
     // Make it available globally via both pointers
     g_Serial = &g_Serial_instance;
