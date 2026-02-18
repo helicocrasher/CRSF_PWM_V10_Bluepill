@@ -39,15 +39,6 @@ TIM_HandleTypeDef* Timer_map[num_PWM_channels]={&htim2,       &htim2,       &hti
 unsigned int PWM_Channelmap[num_PWM_channels]={ TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4};
 //   Servo Channel number                             1                 2                 3                 4                 5                 6                 7                 8                 9                 10  
 #endif
-mySerial serial2, gnssSerial;
-
-
-  
-extern "C" int __io_putchar(int ch){
-  uint8_t bla = (uint8_t) ch;
-  serial2.write((uint8_t*) &bla,1 );
-  return bla;
-}
 
 
 #ifdef __cplusplus
@@ -97,6 +88,7 @@ static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_length);
 int8_t send_UART2(void);
 
 extern ADC_HandleTypeDef hadc1;
+mySerial serial2, gnssSerial;
 STM32Stream* crsfSerial = nullptr;  // Will be initialized in user_init()
 AlfredoCRSF crsf;
 volatile bool ready_TX_UART2 = 1;

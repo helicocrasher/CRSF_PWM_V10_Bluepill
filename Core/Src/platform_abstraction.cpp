@@ -43,6 +43,15 @@ extern mySerial gnssSerial;
 
 char UART1_TX_Buffer[64];
 
+// redirection of printf() output to serial2.write()
+  
+extern "C" int __io_putchar(int ch){
+  uint8_t single_char = (uint8_t) ch;
+  serial2.write((uint8_t*) &single_char,1 );
+  return single_char;
+}
+
+
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
     if (hadc->Instance == ADC1) {
         // Handle ADC conversion complete event
