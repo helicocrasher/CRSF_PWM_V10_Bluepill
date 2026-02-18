@@ -15,6 +15,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 //#include "stm32g0xx_hal_adc.h"
 //#include "stm32g0xx_hal_i2c.h"
 //#include "stm32g0xx_hal_uart.h"
+#include "myHalfSerial_X.h"
 #include <cstdint>
 #include <cstring>
 #include <sys/_intsup.h>
@@ -22,7 +23,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 // Global pointer for HAL callback
 STM32Stream* g_uartStream = nullptr;
 
-extern UART_HandleTypeDef huart1, huart2;
+extern UART_HandleTypeDef huart1, huart2, huart3;
 extern ADC_HandleTypeDef hadc1;
 extern I2C_HandleTypeDef hi2c1;
 extern volatile uint32_t RX1_overrun, ELRS_TX_count;
@@ -30,9 +31,11 @@ extern volatile uint8_t ready_RX_UART1;
 extern volatile uint8_t ready_TX_UART1;
 extern volatile uint8_t ready_TX_UART2; 
 extern volatile uint8_t ready_RX_UART2; 
+extern volatile uint8_t huart3_IT_ready;
 extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
+extern myHalfSerial_X serial2TX;
 
 char UART1_TX_Buffer[64];
 
@@ -50,11 +53,13 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-    ready_TX_UART2 = 1;
-  } 
-  if (huart->Instance == USART1) {
-    ready_TX_UART1 = 1; 
-  }
+        if (serial2TX.TX_callBackPull()==0) { // get more data to send if available in FIFO
+            ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
+        } 
+    }
+    if (huart->Instance == USART1) {
+        ready_TX_UART1 = 1; 
+    }
 }
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -64,14 +69,24 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
             // Handle overrun error
             __HAL_UART_CLEAR_OREFLAG(&huart1);
         RX1_overrun++;      
-    }
+        }
         g_uartStream->onRxByte(g_uartStream->_rxBuf[g_uartStream->_head]);
         // Re-arm RX interrupt for next byte
         HAL_UART_Receive_IT(huart, &g_uartStream->_rxBuf[g_uartStream->_head], 1);
     }
+    if (huart == &huart2) {
+        ready_RX_UART2 = 1;
+        // Re-arm RX interrupt for next byte
+        HAL_UART_Receive_IT(huart, (uint8_t*)&ready_RX_UART2, 1);
+    }
+    if (huart == &huart3) {
+        huart3_IT_ready = 1;
+        // Re-arm RX interrupt for next byte
+        HAL_UART_Receive_IT(huart, (uint8_t*)&huart3_IT_ready, 1);
+    }
 }
 
-// MasterTxCpltCallback
+// I2C MasterTxCpltCallback
 extern "C" void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
     if (hi2c == &hi2c1) {
         // Handle I2C transmission complete event

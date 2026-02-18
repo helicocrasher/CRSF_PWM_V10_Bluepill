@@ -2,6 +2,7 @@
 #define MYHALFSERIAL_X_H
 
 #include "stm32f1xx_hal.h"
+#include <cstddef>
 
 class myHalfSerial_X {
 public:
@@ -13,6 +14,7 @@ public:
     size_t write(const uint8_t *input_array, size_t len);
     int8_t updateSerial();
 	size_t read(uint8_t *output_array, size_t len);
+    size_t TX_callBackPull();
     size_t available();
 	size_t fifo_reset(void);
 	int8_t restart();

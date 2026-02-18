@@ -1,4 +1,5 @@
 #include "myHalfSerial_X.h"
+#include "stm32f1xx_hal_uart.h"
 #include <cstddef>
 
 
@@ -79,6 +80,7 @@ size_t myHalfSerial_X::write(const uint8_t *data_array, size_t len) {
         fifo_push(data_array[i]);
         ++written;
     }
+    send(); // Attempt to send immediately after writing to FIFO
     return written;
 }
 
@@ -109,8 +111,7 @@ int8_t myHalfSerial_X::send() {
     if (!m_huart_IT_ready || !(*m_huart_IT_ready)) //pointer check and ready check
         return -1;
     size_t available = fifo_data_length();
-    if (available == 0)
-        return 0;
+    if (available == 0)      return 0;
     size_t to_send = (available < m_uart_buffer_size) ? available : m_uart_buffer_size;
     for (size_t i = 0; i < to_send; ++i) {
         m_uart_buffer[i] = fifo_pop();
@@ -128,6 +129,19 @@ int8_t myHalfSerial_X::send() {
         return -1;
     }
 }
+
+size_t myHalfSerial_X::TX_callBackPull() {
+    if(!m_isTX) return 0; // Only valid for TX mode
+    size_t available = fifo_data_length();
+    if(available == 0) return 0; // No data to pull
+    size_t to_pull = (available < m_uart_buffer_size) ? available : m_uart_buffer_size;
+    for (size_t i = 0; i < to_pull; ++i) {
+        m_uart_buffer[i] = fifo_pop();
+    }
+    HAL_UART_Transmit_IT(m_huart,m_uart_buffer,to_pull);
+    return to_pull;
+}
+
 int8_t myHalfSerial_X::receive() {
     if (!m_huart_IT_ready)    return -1;
 	if( !*m_huart_IT_ready)

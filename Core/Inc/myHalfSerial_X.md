@@ -38,6 +38,17 @@ size_t write(const uint8_t *input_array, size_t len);
 ```
 - Copies up to `len` bytes from `input_array` into the FIFO buffer
 - Returns the number of bytes actually written (may be less if FIFO is full)
+- NEW: if no transmission is ongoing (huart_IT_ready) the internal sen() method is called 
+-->self start.
+
+### TX_callBackPull NEW!
+```cpp
+size_t TX_callBackPull(void)
+```
+- request for the next HAL_UART_Transmit_IT
+- if data is in the FIFO a next transmission is started
+- return value the number of bytes put to transmission max UART_buffersize, min 0
+- (the HAL_UART_TxCpltCallback must set the huart_IT_ready after TX_callBackPull==0)
 
 ### Read Data (RX mode)
 ```cpp

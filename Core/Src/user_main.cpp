@@ -7,7 +7,9 @@
 //#include <cstddef>
 //#include <cstdint>
 //#include <stdint.h>
-//#include <stdio.h>
+#include <cstddef>
+#include <stdint.h>
+#include <stdio.h>
 //#include <sys/_intsup.h>
 #include "../AlfredoCRSF/src/AlfredoCRSF.h"
 #include "platform_abstraction.h"
@@ -31,8 +33,9 @@ TIM_HandleTypeDef* Timer_map[num_PWM_channels]={&htim2,      &htim2,       &htim
 unsigned int PWM_Channelmap[num_PWM_channels]={TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_3,TIM_CHANNEL_4,TIM_CHANNEL_3,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_1,TIM_CHANNEL_2};
 //   Servo Channel number                             1                 2                 3                 4                 5                 6                 7                 8                 9                 10  
 //   Timer channel offset = TIM_Channel_X -1)*4       0                 4                 0                 8                12                 8                 4                 0                 0                  4                
+#endif
 
-#else // BluePill or other custom board - adjust Timer_map and PWM_Channelmap according to your wiring and timers used
+#ifdef TARGET_BLUEPILL // BluePill or other custom board - adjust Timer_map and PWM_Channelmap according to your wiring and timers used
 // PWM Channel to Timer and Channel mapping  for the used "BluePill" board
 TIM_HandleTypeDef* Timer_map[num_PWM_channels]={&htim2,       &htim2,       &htim3,       &htim3,       &htim3,       &htim3,       &htim1,       &htim1,       &htim1,       &htim1};
 unsigned int PWM_Channelmap[num_PWM_channels]={ TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4,TIM_CHANNEL_1,TIM_CHANNEL_2,TIM_CHANNEL_3,TIM_CHANNEL_4};
@@ -66,6 +69,8 @@ static void pwm_update_task(uint32_t actual_millis);
 static void LED_and_debugSerial_task(uint32_t actual_millis);
 static void analog_measurement_task(uint32_t actual_millis);
 static void telemetry_transmission_task(uint32_t actual_millis);
+void gnssUpdateTask(uint32_t actual_millis);
+void gnssDisplayTask(uint32_t actual_millis) ;
 
 
 static void error_handling_task(void); 
@@ -112,7 +117,7 @@ void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
 //  Serial_InitUART2();  // Initialize Serial (UART2) for debug output
-  serial2TX.init(&huart2, (bool*)&ready_TX_UART2, true,256, 4  );
+  serial2TX.init(&huart2, (bool*)&ready_TX_UART2, true,256, 16  );
   // Ensure UART is initialized before creating STM32Stream
   crsfSerial = new STM32Stream(&huart1);
   crsf.begin(*crsfSerial);
@@ -136,14 +141,36 @@ void user_loop_step(void) // same as the "arduino loop()" function
   LED_and_debugSerial_task(actual_millis);
   analog_measurement_task(actual_millis);
   baroProcessingTask(actual_millis);
-  baroSerialDisplayTask(actual_millis);
+//  baroSerialDisplayTask(actual_millis);
   telemetry_transmission_task(actual_millis);
   error_handling_task();
-  serial2TX.updateSerial();
+//  serial2TX.updateSerial();
+//  gnssUpdateTask(actual_millis);
+//  gnssDisplayTask(actual_millis);
   main_loop_cnt++;
 //  HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
 }
 
+void gnssUpdateTask(uint32_t actual_millis) {
+  static uint32_t last_update_time = 0;
+  if ((actual_millis - last_update_time) <100) return; // Update every 100ms
+
+  last_update_time = actual_millis;
+  if (gnss_initialized) {
+    gnss_update();
+  }
+}
+
+void gnssDisplayTask(uint32_t actual_millis) {
+  static uint32_t last_print_time = 0;
+  if ((actual_millis - last_print_time) <2000) return; // Print every 2 seconds
+
+  last_print_time = actual_millis;
+  if (gnss_initialized) {
+    // Print GNSS data to Serial for debugging
+   // printf("GNSS Data: Lat=%.6f, Lon=%.6f, Alt=%.2f, Sats=%d\n", pGNSS->getLatitude(), pGNSS->getLongitude(), pGNSS->getAltitude(), pGNSS->getSIV());
+  }
+} 
 
 static void analog_measurement_task(uint32_t actual_millis) {
   // analog measurement task running with ADC speed is fed by DMA ~22ms with oversampling 16, 
@@ -379,14 +406,14 @@ void baroProcessingTask(uint32_t millis_now){
   millis_end=HAL_GetTick();
   volatile uint32_t baro_processing_millis = millis_end - millis_start; // For debugging - check how long baro processing takes and if it causes delays in PWM output or CRSF reception
   snprintf(debug_str_buffer, sizeof(debug_str_buffer), "Baro processing time: %lu ms\n\r", (unsigned long)baro_processing_millis);
-  //writeSerialTXFifoBuffer((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
   serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer)); // Send baro processing time to UART2 for debugging
 }
 
 void gnss_module_init(void) {
   //  printf("\n>>> Initializing GNSS Module...\n");
-  snprintf(debug_str_buffer, sizeof(debug_str_buffer),"\n>>> Initializing GNSS Module...\r\n");
-  serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
+  snprintf(debug_str_buffer, sizeof(debug_str_buffer),"\n\r>>> Initializing GNSS Module...\r\n");
+  size_t len = strlen(debug_str_buffer);
+  serial2TX.write((uint8_t*)debug_str_buffer, len);
   delay(1000); // Small delay to ensure UART is ready before initialization messages are sent
     
     // This call blocks for ~1-2 seconds while waiting for module response
@@ -402,6 +429,7 @@ void gnss_module_init(void) {
         serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
         gnss_last_update_time = millis();
         gnss_last_print_time = millis();
+  
     } else {
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>> GNSS Module: INITIALIZATION FAILED\r\n");
         serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
@@ -416,6 +444,7 @@ void gnss_module_init(void) {
         snprintf(debug_str_buffer, sizeof(debug_str_buffer), ">>>  4. RX antenna is connected\r\n\r\n");
         serial2TX.write((uint8_t*)debug_str_buffer, strlen(debug_str_buffer));
     }
+    delay(1000); // Small delay to ensure UART messages are sent before any further processing
 }
 
 
