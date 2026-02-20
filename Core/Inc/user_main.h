@@ -17,7 +17,7 @@
 // C++ only includes
 #ifdef __cplusplus
 #include "ublox_gnss_wrapper.h"
-#include "ublox_gnss_example.h"
+//#include "ublox_gnss_example.h"
 #endif
 
 //#include "myHalfSerial_X.h"

@@ -58,7 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ./AlfredoCRSF/src/crc8.cpp
     ./SPL06-001/SPL06-001.cpp
     ./Core/Src/stm32_arduino_compatibility.cpp
-    ./Core/Src/ublox_gnss_example.cpp
+#    ./Core/Src/ublox_gnss_example.cpp
     ./Core/Src/ublox_gnss_wrapper.cpp
     ./SparkFun_u-blox_GNSS_Arduino_Library/src/SparkFun_u-blox_GNSS_Arduino_Library.cpp
 )

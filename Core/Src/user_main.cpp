@@ -50,11 +50,14 @@ extern "C" {
 
 void gnss_module_init(void);
 void gnss_module_update(uint32_t millis_now);
-static UbloxGNSSWrapper *pGNSS = nullptr;
+extern mySerial gnssSerial;
+static STM32Serial gnssSerialWrapper(&gnssSerial);
+UbloxGNSSWrapper *pGNSS = nullptr;
+
 
 #define TARGET_MATEKSYS_CRSF_PWM_V10
 TwoWire BaroWire(SDA2, SCL2);	
-//TwoWire BaroWire();	
+
 
 SPL06 BaroSensor(&BaroWire); 
 //mySerial serial2, gnssSerial;
@@ -65,6 +68,7 @@ static void telemetrySendCellVoltage(uint8_t cellId, float voltage);
 void telemetrySendBaroAltitude(float altitude);
 void telemetrySendVario( float verticalspd);
 void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS);
+void floatToString( char* buffer, size_t bufferSize,float value);
 
 
 
@@ -84,8 +88,9 @@ static void LED_and_debugSerial_task(uint32_t actual_millis);
 static void analog_measurement_task(uint32_t actual_millis);
 static void telemetry_transmission_task(uint32_t actual_millis);
 void gnssUpdateTask(uint32_t actual_millis);
-void gnssProcessingTask(uint32_t actual_millis);
 void gnssDisplayTask(uint32_t actual_millis);
+bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready);
+
 
 
 static void error_handling_task(void); 
@@ -156,12 +161,12 @@ void user_loop_step(void) // same as the "arduino loop()" function
   crsf.update();
   CRSF_reception_watchdog_task(actual_millis);
   pwm_update_task(actual_millis);
-  LED_and_debugSerial_task(actual_millis);
+//  LED_and_debugSerial_task(actual_millis);
   analog_measurement_task(actual_millis);
-  baroProcessingTask(actual_millis);
+//  baroProcessingTask(actual_millis);
 //  baroSerialDisplayTask(actual_millis);
   gnssUpdateTask(actual_millis);
-  gnssProcessingTask(actual_millis);
+  gnssDisplayTask(actual_millis);
   telemetry_transmission_task(actual_millis);
   error_handling_task();
   serial2.updateSerial();
@@ -172,23 +177,38 @@ void user_loop_step(void) // same as the "arduino loop()" function
 void gnssUpdateTask(uint32_t actual_millis) {
   static uint32_t last_update_time = 0;
   if ((actual_millis - last_update_time) <100) return; // Update every 100ms
-
-  last_update_time = actual_millis;
-  if (gnss_initialized) {
-    gnss_update();
+    last_update_time = actual_millis;
+    if (gnss_initialized && pGNSS) {
+      pGNSS->update();
+//      gnssSerial.updateSerial();
   }
 }
 
-void gnssProcessingTask(uint32_t actual_millis) {
+void gnssDisplayTask(uint32_t actual_millis) {
   static uint32_t last_print_time = 0;
-  if ((actual_millis - last_print_time) <2000) return; // Print every 2 seconds
+  static char float_string_buffer[8];
+
+  if ((actual_millis - last_print_time) <500) return; // Print every 500ms
 
   last_print_time = actual_millis;
-  if (gnss_initialized) {
-    GNSS_Altitude_MSL=gnss_get_altitude_msl();
+ // if (gnss_initialized && pGNSS) {
+  if (pGNSS) {
+    printf("GPS %s , ",pGNSS->hasValidFix() ? "Valid Fix" : "   No Fix");
+    printf("Sats: %2d , ", pGNSS->getSIV());
+    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLatitude()/10000000.0f);
+    printf("Latitude: %s , ", float_string_buffer);
+    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLongitude()/10000000.0f);
+    printf("Longitude: %s , ", float_string_buffer);
+    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getAltitudeMSL()/1000.0f);
+    printf("Altitude MSL: %s m",   float_string_buffer);
+    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getGroundSpeed()/1000.0f*3.6f); // Convert mm/s to km/h
+    printf(", Speed: %s km/h", float_string_buffer);
+   // printf("Altitude MSL: %3.2f m, SIV: %d, Speed: %.2f km/h\n\r", GNSS_Altitude_MSL/1000.0f, gnss_get_siv(), gnss_get_ground_speed()*mmsTokmh); 
 
-    // Print GNSS data to Serial for debugging
- //   printf("GNSS Data: Lat=%.6f, Lon=%.6f, Alt=%.2f, Sats=%d\n", pGNSS->getLatitude(), pGNSS->getLongitude(), pGNSS->getAltitude(), pGNSS->getSIV());
+   printf("\n\r");
+
+
+
   }
 } 
 
@@ -431,7 +451,7 @@ void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS)
   crsfGps.longitude = htobe32(pGNSS->getLongitude());
   crsfGps.groundspeed = htobe16(pGNSS->getGroundSpeed()/mmsTokmh);
   crsfGps.heading = htobe16(pGNSS->getHeading());   //TODO: heading seems to not display in EdgeTX correctly, some kind of overflow error
-  //crsfGps.altitude = htobe16((uint16_t)(pGNSS->getAltitudeMSL()/1000 + 1000));
+  crsfGps.altitude = htobe16((uint16_t)(pGNSS->getAltitudeMSL()/1000 + 1000));
   crsfGps.satellites = (uint8_t)(pGNSS->getSIV() & 0xFF);
   crsf.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_GPS, &crsfGps, sizeof(crsfGps));
 }
@@ -461,6 +481,28 @@ void gnss_module_init(void) {
     delay(1 );
 }
 
+bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready) {
+    if (!huart3) {
+        return false;
+    }
+    
+    gnssSerial.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
+    pSerial = &gnssSerialWrapper;
+    
+    pGNSS = new UbloxGNSSWrapper(gnssSerialWrapper);
+    if (!pGNSS) {
+        return false;
+    }
+    
+    if (!pGNSS->begin(2000)) {
+        printf("GNSS init failed\n\r");
+        return false;
+    }
+    
+    printf("GNSS initialized successfully\n\r");
+//    lastUpdateTime = millis();
+    return true;
+}
 
 #ifdef __cplusplus
 }  // extern "C"

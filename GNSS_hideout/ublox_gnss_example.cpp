@@ -19,7 +19,7 @@ extern "C" {
 
 extern mySerial gnssSerial;
 static STM32Serial gnssSerialWrapper(&gnssSerial);
-UbloxGNSSWrapper *pGNSS = nullptr;
+extern UbloxGNSSWrapper *pGNSS;
 static uint32_t lastUpdateTime = 0;
 static const uint32_t UPDATE_INTERVAL_MS = 100;
 
@@ -32,7 +32,7 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_r
         return false;
     }
     
-    gnssSerial.init(huart3, huart_TX_ready, huart_RX_ready, 256, 4);
+    gnssSerial.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
     pSerial = &gnssSerialWrapper;
     
     pGNSS = new UbloxGNSSWrapper(gnssSerialWrapper);
