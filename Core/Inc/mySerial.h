@@ -20,12 +20,14 @@ public:
     size_t available();
 	size_t fifo_reset(void);
 	int8_t restart();
+	int8_t receive();
+	uint8_t* get_uart_rx_buffer();
 
 private:
     UART_HandleTypeDef *m_huart;
     bool *m_huart_tx_ready,*m_huart_rx_ready;
 	const bool m_isTX=1;
-    const bool m_isRX=0;
+    const bool m_isRX=!m_isTX;
     uint8_t *m_tx_fifo;
     uint8_t *m_rx_fifo;
     size_t m_fifo_size;
@@ -44,7 +46,7 @@ private:
     void fifo_push(bool isTX, uint8_t c);
     uint8_t fifo_pop(bool isTX);
     int8_t send();
-    int8_t receive();
+
 };
 #endif // __cplusplus
-#endif // MYHALFSERIAL_X_H
+#endif // MYSERIAL_H

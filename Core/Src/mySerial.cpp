@@ -49,6 +49,10 @@ int8_t mySerial::restart(){
     return 0;
 }
 
+uint8_t* mySerial::get_uart_rx_buffer(){
+	return m_uart_rx_buffer;
+}
+
 size_t mySerial::available() {
     return fifo_data_length( m_isRX);
 }

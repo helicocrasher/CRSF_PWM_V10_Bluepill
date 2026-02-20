@@ -17,8 +17,11 @@
 #ifndef UBLOX_GNSS_WRAPPER_H
 #define UBLOX_GNSS_WRAPPER_H
 
+#ifdef __cplusplus
 #include "SparkFun_u-blox_GNSS_Arduino_Library.h"
+#endif
 
+#ifdef __cplusplus
 class UbloxGNSSWrapper {
 public:
     /**
@@ -110,6 +113,12 @@ public:
     int32_t getAltitudeMSL(void);
     
     /**
+     * @brief Get altitude above mean sea level (cached)
+     * @return Altitude in millimeters
+     */
+    int32_t getAltitude(void);
+    
+    /**
      * @brief Get ground speed (cached)
      * @return Speed in mm/s
      */
@@ -153,5 +162,6 @@ private:
     
     uint32_t lastUpdateTime;
 };
+#endif
 
 #endif // UBLOX_GNSS_WRAPPER_H

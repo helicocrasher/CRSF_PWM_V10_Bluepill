@@ -11,11 +11,17 @@
 #include "main.h"
 #include "platform_abstraction.h"
 #include <stdint.h>
-#include "platform_abstraction.h"
+#include "stm32_arduino_compatibility.h"
+#include "mySerial.h"
+
+// C++ only includes
+#ifdef __cplusplus
+#include "ublox_gnss_wrapper.h"
+#include "ublox_gnss_example.h"
+#endif
 
 //#include "myHalfSerial_X.h"
 //#include "../SparkFun_u-blox_GNSS_Arduino_Library/src/SparkFun_u-blox_GNSS_Arduino_Library.h"
-#include "ublox_gnss_example.h"
 
 #define num_PWM_channels 10
 
@@ -37,7 +43,9 @@ extern "C" {
 
 void gnss_module_init(void);
 void gnss_module_update(uint32_t millis_now);
+
 void Serial_InitUART2(void);  // Initialize Serial (UART2) for debug output
+// or defined in stm32_arduino_compatibility.cpp
 
 void user_init(void);
 void user_loop_step(void);

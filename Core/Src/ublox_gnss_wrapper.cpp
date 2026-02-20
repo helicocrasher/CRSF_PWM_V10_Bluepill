@@ -96,6 +96,10 @@ int32_t UbloxGNSSWrapper::getAltitudeMSL(void) {
     return cachedAltitude;
 }
 
+int32_t UbloxGNSSWrapper::getAltitude(void) {
+    return cachedAltitude;
+}
+
 int32_t UbloxGNSSWrapper::getGroundSpeed(void) {
     return cachedSpeed;
 }

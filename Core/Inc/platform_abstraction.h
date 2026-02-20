@@ -1,7 +1,7 @@
 /*
  * platform_abstraction.h
  * Platform abstraction layer for STM32 without Arduino
- * Provides Stream class and millis() for AlfredoCRSF library
+ * Provides STM32Stream for CRSF library
  */
 
 #ifndef PLATFORM_ABSTRACTION_H
@@ -17,17 +17,11 @@ void Serial2Debug_println(char*  msg) ;
 
 
 #ifdef __cplusplus
-// Abstract Stream class for serial communication
-class Stream {
-public:
-    virtual ~Stream() {}
-    virtual int available() = 0;
-    virtual int read() = 0;
-    virtual size_t write(uint8_t b) = 0;
-    virtual size_t write(const uint8_t *buf, size_t len) = 0;
-};
+// C++ only - include stm32_arduino_compatibility for Stream class
+#include "stm32_arduino_compatibility.h"
 
 // STM32 UART implementation with circular buffer
+// Inherits Stream from stm32_arduino_compatibility.h
 class STM32Stream : public Stream {
 public:
     STM32Stream(UART_HandleTypeDef *huart);
@@ -61,13 +55,13 @@ void stm32stream_rearm_rx_irq(void);
 #ifdef __cplusplus
 }
 #endif
-
+/*
 // Platform-specific millis() implementation
 uint32_t platform_millis();
 
 // Helper macro for compatibility
 #define millis() platform_millis()
-
+*/
 
 #ifdef __cplusplus
 // Arduino-style map() function

@@ -96,13 +96,13 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     }
     if (huart == &huart2) {
         ready_RX_UART2 = 1;
-        // Re-arm RX interrupt for next byte
-        HAL_UART_Receive_IT(huart, (uint8_t*)&ready_RX_UART2, 1);
+        // push the received data to this RX FIFO and Re-arm RX receptiont for next byte
+        serial2.receive();
     }
     if (huart == &huart3) {
         ready_RX_UART3 = 1;
-        // Re-arm RX interrupt for next byte
-        HAL_UART_Receive_IT(huart, (uint8_t*)&ready_RX_UART3, 1);
+        // push the received data to this RX FIFO and Re-arm RX receptiont for next byte
+        gnssSerial.receive();
     }
 }
 
@@ -172,8 +172,8 @@ int STM32Stream::read() {
 }
 
 size_t STM32Stream::write(uint8_t b) {
-//    HAL_UART_Transmit(_huart, &b, 1, 100); // Blocking version
-    if (ready_TX_UART1==  1 ) { // Non-blocking version - not tested
+
+    if (ready_TX_UART1==  1 ) { // Non-blocking version - working
       ELRS_TX_count+=1;  
       memcpy(&UART1_TX_Buffer[0], &b, 1);
       HAL_UART_Transmit_IT(_huart, (uint8_t*)UART1_TX_Buffer, 1); 
@@ -186,8 +186,6 @@ size_t STM32Stream::write(uint8_t b) {
 }
 
 size_t STM32Stream::write(const uint8_t *buf, size_t len) {
-
-//    HAL_UART_Transmit(_huart, (uint8_t*)buf, len, 100); // Blocking version - does work but blocking
     if (ready_TX_UART1==  1 ) { // Non-blocking version - does work
       // Limit the number of bytes to the size of UART1_TX_Buffer to avoid overflow
       size_t txLen = len;
@@ -215,20 +213,6 @@ void STM32Stream::onRxByte(uint8_t byte) {
     }
 }
 
-uint32_t platform_millis() {
-    return HAL_GetTick();
-}
-/*
-
-void Serial2Debug_print(char* msg) {
-    //HAL_UART_Transmit(&huart2, (uint8_t*)(msg), strlen(msg), 100);
-}
-*/
-/*
-
-void Serial2Debug_println(char*  msg) { 
-    // HAL_UART_Transmit(&huart2, (uint8_t*)(msg), strlen(msg), 100); 
-    const char crlf[] = "\r\n";
-    //HAL_UART_Transmit(&huart2, (uint8_t*)crlf, 2, 100); 
-}
-*/
+//uint32_t platform_millis() {
+//    return HAL_GetTick();
+//}

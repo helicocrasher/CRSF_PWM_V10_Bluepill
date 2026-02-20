@@ -16,9 +16,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include "stm32f1xx_hal.h"
+
+#ifdef __cplusplus
 #include <cstdio>
 #include <cstdarg>
-#include "stm32f1xx_hal.h"
+#endif
 
 // ============================================================================
 // Type Definitions
@@ -252,8 +257,16 @@ extern STM32Serial *Serial_ptr;  // Global Serial object for UART2 debug (pointe
  * @brief Initialize the Serial instance for UART2 debug output
  * Call this once during initialization before using Serial
  */
-void Serial_InitUART2(void);
 
+/* 
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Serial_InitUART2(void);
+#ifdef __cplusplus
+}
+#endif
+*/
 /**
  * @brief Get pointer to the global Serial instance for UART2 debug
  * Used for compatibility with Arduino code that expects a Serial object
@@ -270,6 +283,7 @@ extern STM32Serial* GetSerialRef(void);
 class TwoWire {
 public:
     TwoWire() {}
+    TwoWire(int sda, int scl) { (void)sda; (void)scl; }  // Constructor for compatibility with SPL06
     virtual ~TwoWire() {}
     
     // Stub methods - I2C not supported, only serial

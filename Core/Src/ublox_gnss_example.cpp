@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include "mySerial.h"
 #include "ublox_gnss_wrapper.h"
-//#include "myHalfSerial_X.h"
+
 #include "stm32_arduino_compatibility.h"
 
 #ifdef __cplusplus
@@ -19,7 +19,7 @@ extern "C" {
 
 extern mySerial gnssSerial;
 static STM32Serial gnssSerialWrapper(&gnssSerial);
-static UbloxGNSSWrapper *pGNSS = nullptr;
+UbloxGNSSWrapper *pGNSS = nullptr;
 static uint32_t lastUpdateTime = 0;
 static const uint32_t UPDATE_INTERVAL_MS = 100;
 

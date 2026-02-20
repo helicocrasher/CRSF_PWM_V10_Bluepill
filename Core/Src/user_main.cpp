@@ -3,7 +3,9 @@
 
 #include "user_main.h"
 #include "mySerial.h"
-#include "ublox_gnss_example.h"
+//#include "ublox_gnss_example.h"
+//#include "ublox_gnss_wrapper.h"
+//#include "stm32_arduino_compatibility.h"
 //#include <cstddef>
 
 #include <cstddef>
@@ -48,17 +50,22 @@ extern "C" {
 
 void gnss_module_init(void);
 void gnss_module_update(uint32_t millis_now);
-
+static UbloxGNSSWrapper *pGNSS = nullptr;
 
 #define TARGET_MATEKSYS_CRSF_PWM_V10
 TwoWire BaroWire(SDA2, SCL2);	
+//TwoWire BaroWire();	
+
 SPL06 BaroSensor(&BaroWire); 
 //mySerial serial2, gnssSerial;
 void setupBaroSensor();  
 void baroProcessingTask(uint32_t millis_now);
 void baroSerialDisplayTask(uint32_t millis_now);
+static void telemetrySendCellVoltage(uint8_t cellId, float voltage);
 void telemetrySendBaroAltitude(float altitude);
 void telemetrySendVario( float verticalspd);
+void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS);
+
 
 
 /*
@@ -77,13 +84,14 @@ static void LED_and_debugSerial_task(uint32_t actual_millis);
 static void analog_measurement_task(uint32_t actual_millis);
 static void telemetry_transmission_task(uint32_t actual_millis);
 void gnssUpdateTask(uint32_t actual_millis);
-void gnssDisplayTask(uint32_t actual_millis) ;
+void gnssProcessingTask(uint32_t actual_millis);
+void gnssDisplayTask(uint32_t actual_millis);
 
 
 static void error_handling_task(void); 
 
 // basic functions
-static void sendCellVoltage(uint8_t cellId, float voltage);
+
 static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_length);
 int8_t send_UART2(void);
 
@@ -108,6 +116,9 @@ static float bat_voltage=0.0f, bat_current=0.0f;
 
 static const float IIR_ALPHA  = 0.135755f;  // 0.5Hz cut off (fc/40 / fc=Hz /Tc=320ms)
 static const float IIR_BETA  = (1.0f - IIR_ALPHA);
+
+int32_t GNSS_Altitude_MSL=0;
+static const float mmsTokmh = 3.6f; // conversion factor from mm/s to km/h
 
 static float GND_altitude=0;
 static float previous_alt_ASL=0, baroAltitude=0, baroTemperature=0, baroPressure=0;
@@ -149,9 +160,11 @@ void user_loop_step(void) // same as the "arduino loop()" function
   analog_measurement_task(actual_millis);
   baroProcessingTask(actual_millis);
 //  baroSerialDisplayTask(actual_millis);
+  gnssUpdateTask(actual_millis);
+  gnssProcessingTask(actual_millis);
   telemetry_transmission_task(actual_millis);
   error_handling_task();
-//  serial2.updateSerial();
+  serial2.updateSerial();
   main_loop_cnt++;
 //  HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
 }
@@ -166,16 +179,20 @@ void gnssUpdateTask(uint32_t actual_millis) {
   }
 }
 
-void gnssDisplayTask(uint32_t actual_millis) {
+void gnssProcessingTask(uint32_t actual_millis) {
   static uint32_t last_print_time = 0;
   if ((actual_millis - last_print_time) <2000) return; // Print every 2 seconds
 
   last_print_time = actual_millis;
   if (gnss_initialized) {
+    GNSS_Altitude_MSL=gnss_get_altitude_msl();
+
     // Print GNSS data to Serial for debugging
-   // printf("GNSS Data: Lat=%.6f, Lon=%.6f, Alt=%.2f, Sats=%d\n", pGNSS->getLatitude(), pGNSS->getLongitude(), pGNSS->getAltitude(), pGNSS->getSIV());
+ //   printf("GNSS Data: Lat=%.6f, Lon=%.6f, Alt=%.2f, Sats=%d\n", pGNSS->getLatitude(), pGNSS->getLongitude(), pGNSS->getAltitude(), pGNSS->getSIV());
   }
 } 
+
+      
 
 static void analog_measurement_task(uint32_t actual_millis) {
   // analog measurement task running with ADC speed is fed by DMA ~22ms with oversampling 16, 
@@ -218,15 +235,16 @@ static void CRSF_reception_watchdog_task(uint32_t actual_millis) {
 static void telemetry_transmission_task(uint32_t actual_millis) {
   static uint32_t last_telemetry_millis = 0;
   static uint32_t telemetry_carousel = 0;
-  #define CAROUSEL_MAX 4
+  #define CAROUSEL_MAX 5
 
   if (actual_millis - last_telemetry_millis < 500/CAROUSEL_MAX) return;
   if(bat_voltage<0.0f) bat_voltage=0.0f;
   if(bat_current<0.0f) bat_current=0.0f;
-  if (telemetry_carousel ==0)   sendCellVoltage(1, bat_voltage);
-  if (telemetry_carousel ==1)   sendCellVoltage(2, bat_current);
+  if (telemetry_carousel ==0)   telemetrySendCellVoltage(1, bat_voltage);
+  if (telemetry_carousel ==1)   telemetrySendCellVoltage(2, bat_current);
   if (telemetry_carousel ==2)   telemetrySendBaroAltitude(filt_alt_AGL);
   if (telemetry_carousel ==3)   telemetrySendVario( filt_vario);
+  if (telemetry_carousel ==4)   telemetrySendGps_int(pGNSS);  
   last_telemetry_millis = actual_millis;
   telemetry_carousel++;
   telemetry_carousel %= CAROUSEL_MAX;
@@ -270,7 +288,7 @@ static void error_handling_task(void) {
 }
 
 
-static void sendCellVoltage(uint8_t cellId, float voltage) {
+static void telemetrySendCellVoltage(uint8_t cellId, float voltage) {
   static  uint8_t payload[3];
   
   if (cellId < 1 || cellId > CRSF_BATTERY_SENSOR_CELLS_MAX)     return;
@@ -402,6 +420,22 @@ void baroProcessingTask(uint32_t millis_now){
   volatile uint32_t baro_processing_millis = millis_end - millis_start; // For debugging - check how long baro processing takes and if it causes delays in PWM output or CRSF reception
   printf("Baro processing time: %lu ms\n\r", (unsigned long)baro_processing_millis);
 }
+
+
+void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS)
+{
+  crsf_sensor_gps_t crsfGps = { 0 };
+
+  // Values are MSB first (BigEndian)
+  crsfGps.latitude = htobe32(pGNSS->getLatitude());
+  crsfGps.longitude = htobe32(pGNSS->getLongitude());
+  crsfGps.groundspeed = htobe16(pGNSS->getGroundSpeed()/mmsTokmh);
+  crsfGps.heading = htobe16(pGNSS->getHeading());   //TODO: heading seems to not display in EdgeTX correctly, some kind of overflow error
+  //crsfGps.altitude = htobe16((uint16_t)(pGNSS->getAltitudeMSL()/1000 + 1000));
+  crsfGps.satellites = (uint8_t)(pGNSS->getSIV() & 0xFF);
+  crsf.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_GPS, &crsfGps, sizeof(crsfGps));
+}
+
 
 void gnss_module_init(void) {
   printf("\n>>> Initializing GNSS Module...\n\r");
