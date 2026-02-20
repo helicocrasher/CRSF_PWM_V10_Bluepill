@@ -20,7 +20,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 #include <cstdint>
 #include <cstring>
 #include <sys/_intsup.h>
-#include "ublox_gnss_example.h"
+
 
 // Global pointer for HAL callback
 STM32Stream* g_uartStream = nullptr;

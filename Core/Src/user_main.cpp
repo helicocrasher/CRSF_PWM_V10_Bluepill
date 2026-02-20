@@ -123,7 +123,7 @@ static const float IIR_ALPHA  = 0.135755f;  // 0.5Hz cut off (fc/40 / fc=Hz /Tc=
 static const float IIR_BETA  = (1.0f - IIR_ALPHA);
 
 int32_t GNSS_Altitude_MSL=0;
-static const float mmsTokmh = 3.6f; // conversion factor from mm/s to km/h
+static const float mmsTokmh = 0.0036f; // conversion factor from mm/s to km/h
 
 static float GND_altitude=0;
 static float previous_alt_ASL=0, baroAltitude=0, baroTemperature=0, baroPressure=0;
@@ -201,7 +201,7 @@ void gnssDisplayTask(uint32_t actual_millis) {
     printf("Longitude: %s , ", float_string_buffer);
     floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getAltitudeMSL()/1000.0f);
     printf("Altitude MSL: %s m",   float_string_buffer);
-    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getGroundSpeed()/1000.0f*3.6f); // Convert mm/s to km/h
+    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getGroundSpeed()*mmsTokmh); // Convert mm/s to km/h
     printf(", Speed: %s km/h", float_string_buffer);
    // printf("Altitude MSL: %3.2f m, SIV: %d, Speed: %.2f km/h\n\r", GNSS_Altitude_MSL/1000.0f, gnss_get_siv(), gnss_get_ground_speed()*mmsTokmh); 
 
@@ -449,7 +449,7 @@ void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS)
   // Values are MSB first (BigEndian)
   crsfGps.latitude = htobe32(pGNSS->getLatitude());
   crsfGps.longitude = htobe32(pGNSS->getLongitude());
-  crsfGps.groundspeed = htobe16(pGNSS->getGroundSpeed()/mmsTokmh);
+  crsfGps.groundspeed = htobe16(pGNSS->getGroundSpeed()*mmsTokmh*10);
   crsfGps.heading = htobe16(pGNSS->getHeading());   //TODO: heading seems to not display in EdgeTX correctly, some kind of overflow error
   crsfGps.altitude = htobe16((uint16_t)(pGNSS->getAltitudeMSL()/1000 + 1000));
   crsfGps.satellites = (uint8_t)(pGNSS->getSIV() & 0xFF);
