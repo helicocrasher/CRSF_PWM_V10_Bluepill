@@ -63,8 +63,8 @@ size_t TX_callBackPull();
 - **Behavior:** 
   - Pulls next chunk of data from TX FIFO and starts another transmission
   - Returns number of bytes sent to UART (0 if FIFO is empty)
-- **Usage:** If return value is 0, call `set_ready_TX()` to mark UART as idle
-- **Guard:** Returns 0 if not initialized
+- **Usage:** If return value is 0, callback handler must `set_ready_TX()` to mark UART as idle
+- **Guard:** Returns -1 if not initialized
 
 ### RX Callback Handler
 ```cpp

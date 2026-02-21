@@ -208,9 +208,8 @@ int8_t mySerial::send() {
 
 size_t mySerial::TX_callBackPull() {
     if (!m_initialized || !m_huart || !m_uart_tx_buffer || m_fifo_size == 0) {
-        return 0;  // Not initialized
+        return -1;  // Not initialized
     }
-    if(!m_isTX) return 0; // Only valid for TX mode
     size_t available = fifo_data_length(m_isTX);
     if(available == 0) return 0; // No data to pull
     size_t to_pull = (available < m_uart_tx_buffer_size) ? available : m_uart_tx_buffer_size;
