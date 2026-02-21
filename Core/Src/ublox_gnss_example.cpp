@@ -27,7 +27,7 @@ static const uint32_t UPDATE_INTERVAL_MS = 100;
 // Public API Implementation
 // ============================================================================
 
-bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready) {
+bool gnss_init(UART_HandleTypeDef *huart3) {
     if (!huart3) {
         return false;
     }

@@ -115,10 +115,9 @@ STM32Serial *Serial_ptr = nullptr;  // Will be initialized by Serial_InitUART2
 
 void Serial_InitUART2(void) {
     extern UART_HandleTypeDef huart2;
-    extern volatile bool ready_TX_UART2,ready_RX_UART2;
     
     // Initialize the UART2 instance with UART2 handle
-    g_debug_uart2_instance.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2, 256, 4);
+    g_debug_uart2_instance.init(&huart2, 256, 4);
     
     // Make it available globally via both pointers
     g_Serial = &g_Serial_instance;

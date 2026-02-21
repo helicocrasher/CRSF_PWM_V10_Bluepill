@@ -25,12 +25,6 @@ extern UART_HandleTypeDef huart1, huart2, huart3;
 extern ADC_HandleTypeDef hadc1;
 extern I2C_HandleTypeDef hi2c1;
 extern volatile uint32_t RX1_overrun, ELRS_TX_count;
-extern volatile uint8_t ready_RX_UART1;
-extern volatile uint8_t ready_TX_UART1;
-extern volatile uint8_t ready_TX_UART2; 
-extern volatile uint8_t ready_RX_UART2; 
-extern volatile uint8_t ready_TX_UART3; 
-extern volatile uint8_t ready_RX_UART3; 
 extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
@@ -64,35 +58,40 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 
     if (huart->Instance == USART1) {
-        ready_TX_UART1 = 1; 
+        crsfSerialWrapper.set_ready_TX(); 
     }
     if (huart->Instance == USART2) {
         if (serial2.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
                                             // otherwise it might disturb other time critical interrupt routines
-            ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
+            serial2.set_ready_TX(); // No more data to send, mark UART2 as ready
         } 
     }
     if (huart->Instance == USART3 ){
         if (gnssSerialWrapper.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
 //        {   
-            ready_TX_UART3 = 1;
+            gnssSerialWrapper.set_ready_TX();
         }
     }
 }
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart == &huart1) {
-        ready_RX_UART1 = 1;
+        //ready_RX_UART1 = 1;
+        crsfSerialWrapper.set_ready_RX();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
         crsfSerialWrapper.receive();
     }
     if (huart == &huart2) {
-        ready_RX_UART2 = 1;
+        //ready_RX_UART2 = 1;
+        serial2.set_ready_RX();
+        // push the received data to this RX FIFO and Re-arm RX reception for next byte
+        serial2.receive();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
         serial2.receive();
     }
     if (huart == &huart3) {
-        ready_RX_UART3 = 1;
+        //ready_RX_UART3 = 1;
+        gnssSerialWrapper.set_ready_RX();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
         gnssSerialWrapper.receive();
     }
@@ -115,7 +114,7 @@ STM32Stream::STM32Stream(mySerial *serial)
 
 int STM32Stream::restartUARTRX(UART_HandleTypeDef *huart) {
     if (_serial) {
-        return _serial->restart();  // Use mySerial's restart method
+        return _serial->restart_RX();  // Use mySerial's restart method
     }
     return -1;
 }

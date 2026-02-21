@@ -88,7 +88,7 @@ static void analog_measurement_task(uint32_t actual_millis);
 static void telemetry_transmission_task(uint32_t actual_millis);
 void gnssUpdateTask(uint32_t actual_millis);
 void gnssDisplayTask(uint32_t actual_millis);
-bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready);
+bool gnss_init(UART_HandleTypeDef *huart3, mySerial *gnssSerial_param);
 
 
 
@@ -108,13 +108,6 @@ STM32Stream* crsfSerial = nullptr;      // UART1 wrapper - initialized in user_i
 STM32Stream* gnssSerial = nullptr;      // UART3 wrapper - initialized in gnss_init()
 
 AlfredoCRSF crsf;
-volatile bool ready_TX_UART2 = 1;
-volatile bool ready_RX_UART2 = 1;
-
-volatile bool ready_TX_UART3 = 1;
-volatile bool ready_RX_UART3 = 1;
-volatile uint8_t ready_RX_UART1 = 1;
-volatile bool ready_TX_UART1 = 1;
 volatile bool isCRSFLinkUp = false;
 volatile uint32_t RX1_overrun = 0, crsfSerialRestartRX_counter=0, main_loop_cnt=0, ADC_period=0;
 volatile uint32_t ELRS_TX_count = 0, ADC_count=0;
@@ -146,10 +139,9 @@ static uint32_t gnss_last_print_time = 0;
 void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
-  serial2.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2, 256, 16);
-  
+  serial2.init(&huart2,  256, 16);
   // Initialize UART1 (CRSF) mySerial wrapper and STM32Stream
-  crsfSerialWrapper.init(&huart1, (bool*)&ready_TX_UART1, (bool*)&ready_RX_UART1, 256, 64);
+  crsfSerialWrapper.init(&huart1, 256, 64);
   crsfSerial = new STM32Stream(&crsfSerialWrapper);
   crsf.begin(*crsfSerial);
   
@@ -473,7 +465,7 @@ void gnss_module_init(void) {
     
     // This call blocks for ~1-2 seconds while waiting for module response
     // Safe to call during initialization
-    gnss_initialized = gnss_init(&huart3,(bool*) &ready_TX_UART3, (bool*)&ready_RX_UART3);
+    gnss_initialized = gnss_init(&huart3, &gnssSerialWrapper);
     if (gnss_initialized) {
       printf(">>> GNSS Module: INITIALIZED OK\n\r");
       printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\r");
@@ -492,17 +484,17 @@ void gnss_module_init(void) {
     delay(1 );
 }
 
-bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_ready) {
-    if (!huart3) {
+bool gnss_init(UART_HandleTypeDef *huart3, mySerial *gnssSerial_param) {
+    if (!huart3 || !gnssSerial_param) {
         return false;
     }
     
     // Initialize the mySerial wrapper for UART3
-    gnssSerialWrapper.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
+    gnssSerial_param->init(huart3, 512, 8);
     
     // Create STM32Stream wrapper if not already created
     if (!gnssSerial) {
-        gnssSerial = new STM32Stream(&gnssSerialWrapper);
+        gnssSerial = new STM32Stream(gnssSerial_param);
     }
     
     // Create the UbloxGNSSWrapper with the STM32Stream
