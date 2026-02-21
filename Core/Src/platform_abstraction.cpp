@@ -12,6 +12,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 
 #include "platform_abstraction.h"
 #include "mySerial.h"
+#include "uart_config.h"
 #include "stm32f103xb.h"
 #include <cstdint>
 #include <cstring>
@@ -28,17 +29,18 @@ extern volatile uint32_t RX1_overrun, ELRS_TX_count;
 extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
-extern mySerial serial2;
-extern mySerial crsfSerialWrapper;
-extern mySerial gnssSerialWrapper;
+extern mySerial serialDebug;
+extern mySerial serialCrsf;
+extern mySerial serialGnss;
 
-char UART1_TX_Buffer[64];
 
-// redirection of printf() output to serial2.write()
+// redirection of printf() output to debug UART write()
   
 extern "C" int __io_putchar(int ch){
   uint8_t single_char = (uint8_t) ch;
-  serial2.write((uint8_t*) &single_char,1 );
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+    serialDebug.write((uint8_t*) &single_char,1 );
+#endif
   return single_char;
 }
 
@@ -57,44 +59,49 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 
-    if (huart->Instance == USART1) {
-        crsfSerialWrapper.set_ready_TX(); 
+#if UART_ROLE_CRSF != UART_ROLE_NONE
+    if (huart->Instance == UART_CRSF_INSTANCE) {
+        serialCrsf.set_ready_TX();
     }
-    if (huart->Instance == USART2) {
-        if (serial2.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
-                                            // otherwise it might disturb other time critical interrupt routines
-            serial2.set_ready_TX(); // No more data to send, mark UART2 as ready
-        } 
-    }
-    if (huart->Instance == USART3 ){
-        if (gnssSerialWrapper.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
-//        {   
-            gnssSerialWrapper.set_ready_TX();
+#endif
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+    if (huart->Instance == UART_DEBUG_INSTANCE) {
+        if (serialDebug.TX_callBackPull() == 0) { // get more data to send if available in FIFO
+            serialDebug.set_ready_TX(); // No more data to send, mark debug UART as ready
         }
     }
+#endif
+#if UART_ROLE_GNSS != UART_ROLE_NONE
+    if (huart->Instance == UART_GNSS_INSTANCE) {
+        if (serialGnss.TX_callBackPull() == 0) { // get more data to send if available in FIFO
+            serialGnss.set_ready_TX();
+        }
+    }
+#endif
 }
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart == &huart1) {
-        //ready_RX_UART1 = 1;
-        crsfSerialWrapper.set_ready_RX();
+#if UART_ROLE_CRSF != UART_ROLE_NONE
+    if (huart == UART_CRSF_HANDLE) {
+        serialCrsf.set_ready_RX();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
-        crsfSerialWrapper.receive();
+        serialCrsf.receive();
     }
-    if (huart == &huart2) {
-        //ready_RX_UART2 = 1;
-        serial2.set_ready_RX();
+#endif
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+    if (huart == UART_DEBUG_HANDLE) {
+        serialDebug.set_ready_RX();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
-        serial2.receive();
-        // push the received data to this RX FIFO and Re-arm RX reception for next byte
-        serial2.receive();
+        serialDebug.receive();
     }
-    if (huart == &huart3) {
-        //ready_RX_UART3 = 1;
-        gnssSerialWrapper.set_ready_RX();
+#endif
+#if UART_ROLE_GNSS != UART_ROLE_NONE
+    if (huart == UART_GNSS_HANDLE) {
+        serialGnss.set_ready_RX();
         // push the received data to this RX FIFO and Re-arm RX reception for next byte
-        gnssSerialWrapper.receive();
+        serialGnss.receive();
     }
+#endif
 }
 
 // I2C MasterTxCpltCallback

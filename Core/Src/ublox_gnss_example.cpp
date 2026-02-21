@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include "mySerial.h"
+#include "uart_config.h"
 #include "ublox_gnss_wrapper.h"
 
 #include "stm32_arduino_compatibility.h"
@@ -17,7 +18,7 @@ extern "C" {
 // Global Variables
 // ============================================================================
 
-extern mySerial gnssSerialWrapper;  // UART3 mySerial wrapper (from user_main.cpp)
+extern mySerial serialGnss;  // GNSS mySerial wrapper (from user_main.cpp)
 extern STM32Stream* gnssSerial;     // UART3 STM32Stream wrapper (from user_main.cpp)
 extern UbloxGNSSWrapper *pGNSS;
 static uint32_t lastUpdateTime = 0;
@@ -36,13 +37,13 @@ bool gnss_init(UART_HandleTypeDef *huart3) {
     // Check if the UART handle matches to avoid re-initialization
     static bool initialized = false;
     if (!initialized) {
-        gnssSerialWrapper.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
+        serialGnss.init(huart3, UART_GNSS_FIFO_SIZE, UART_GNSS_TX_BUF_SIZE);
         initialized = true;
     }
     
     // Create STM32Stream wrapper if not already created
     if (!gnssSerial) {
-        gnssSerial = new STM32Stream(&gnssSerialWrapper);
+        gnssSerial = new STM32Stream(&serialGnss);
     }
     
     // Create the UbloxGNSSWrapper with the STM32Stream

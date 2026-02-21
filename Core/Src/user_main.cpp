@@ -3,6 +3,7 @@
 
 #include "user_main.h"
 #include "mySerial.h"
+#include "uart_config.h"
 //#include "ublox_gnss_example.h"
 //#include "ublox_gnss_wrapper.h"
 //#include "stm32_arduino_compatibility.h"
@@ -59,14 +60,16 @@ TwoWire BaroWire(SDA2, SCL2);
 
 
 SPL06 BaroSensor(&BaroWire); 
-//mySerial serial2, gnssSerial;
+//mySerial serialDebug, serialGnss;
 void setupBaroSensor();  
 void baroProcessingTask(uint32_t millis_now);
 void baroSerialDisplayTask(uint32_t millis_now);
+#if UART_ROLE_CRSF != UART_ROLE_NONE
 static void telemetrySendCellVoltage(uint8_t cellId, float voltage);
 void telemetrySendBaroAltitude(float altitude);
 void telemetrySendVario( float verticalspd);
 void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS);
+#endif
 char* floatToString( char* buffer, size_t bufferSize,float value, uint8_t wholePlaces=3 , uint8_t decimalPlaces=2);
 
 
@@ -75,17 +78,19 @@ char* floatToString( char* buffer, size_t bufferSize,float value, uint8_t wholeP
 extern "C" int serial2_putchar(int ch)
 {
     uint8_t c = (uint8_t)ch;
-    serial2.write(&c, 1);
+  serialDebug.write(&c, 1);
     return ch;
 }
 */
 
 //user_loop tasks - timed - prototype declarations
-static void CRSF_reception_watchdog_task(uint32_t actual_millis);
 static void pwm_update_task(uint32_t actual_millis);
 static void LED_and_debugSerial_task(uint32_t actual_millis);
 static void analog_measurement_task(uint32_t actual_millis);
+#if UART_ROLE_CRSF != UART_ROLE_NONE
+static void CRSF_reception_watchdog_task(uint32_t actual_millis);
 static void telemetry_transmission_task(uint32_t actual_millis);
+#endif
 void gnssUpdateTask(uint32_t actual_millis);
 void gnssDisplayTask(uint32_t actual_millis);
 bool gnss_init(UART_HandleTypeDef *huart3, mySerial *gnssSerial_param);
@@ -100,9 +105,9 @@ static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_length);
 int8_t send_UART2(void);
 
 extern ADC_HandleTypeDef hadc1;
-mySerial serial2;                       // Debug UART2
-mySerial crsfSerialWrapper;             // UART1 - wrapped by STM32Stream for AlfredoCRSF
-mySerial gnssSerialWrapper;             // UART3 - wrapped by STM32Stream for ublox_gnss
+mySerial serialDebug;                   // Debug UART (role-based)
+mySerial serialCrsf;                    // CRSF UART (role-based)
+mySerial serialGnss;                    // GNSS UART (role-based)
 
 STM32Stream* crsfSerial = nullptr;      // UART1 wrapper - initialized in user_init()
 STM32Stream* gnssSerial = nullptr;      // UART3 wrapper - initialized in gnss_init()
@@ -139,11 +144,15 @@ static uint32_t gnss_last_print_time = 0;
 void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
-  serial2.init(&huart2,  256, 16);
-  // Initialize UART1 (CRSF) mySerial wrapper and STM32Stream
-  crsfSerialWrapper.init(&huart1, 256, 64);
-  crsfSerial = new STM32Stream(&crsfSerialWrapper);
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+  serialDebug.init(UART_DEBUG_HANDLE, UART_DEBUG_FIFO_SIZE, UART_DEBUG_TX_BUF_SIZE);
+#endif
+#if UART_ROLE_CRSF != UART_ROLE_NONE
+  // Initialize CRSF mySerial wrapper and STM32Stream
+  serialCrsf.init(UART_CRSF_HANDLE, UART_CRSF_FIFO_SIZE, UART_CRSF_TX_BUF_SIZE);
+  crsfSerial = new STM32Stream(&serialCrsf);
   crsf.begin(*crsfSerial);
+#endif
   
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_Delay(20);
@@ -159,8 +168,10 @@ void user_loop_step(void) // same as the "arduino loop()" function
   static uint32_t  actual_millis=0;
 
   actual_millis = HAL_GetTick();
+#if UART_ROLE_CRSF != UART_ROLE_NONE
   crsf.update();
   CRSF_reception_watchdog_task(actual_millis);
+#endif
   pwm_update_task(actual_millis);
   LED_and_debugSerial_task(actual_millis);
   analog_measurement_task(actual_millis);
@@ -168,10 +179,16 @@ void user_loop_step(void) // same as the "arduino loop()" function
 //  baroSerialDisplayTask(actual_millis);
   gnssUpdateTask(actual_millis);
   gnssDisplayTask(actual_millis);
+#if UART_ROLE_CRSF != UART_ROLE_NONE
   telemetry_transmission_task(actual_millis);
+#endif
   error_handling_task();
-  serial2.send(); // Trigger sending of any pending data in serial2 FIFO
-  gnssSerialWrapper.send(); // Trigger sending of any pending data in gnssSerialWrapper FIFO
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+  serialDebug.send(); // Trigger sending of any pending data in debug FIFO
+#endif
+#if UART_ROLE_GNSS != UART_ROLE_NONE
+  serialGnss.send(); // Trigger sending of any pending data in GNSS FIFO
+#endif
   main_loop_cnt++;
   HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
 }
@@ -232,6 +249,7 @@ static void analog_measurement_task(uint32_t actual_millis) {
 }
 
 
+#if UART_ROLE_CRSF != UART_ROLE_NONE
 static void CRSF_reception_watchdog_task(uint32_t actual_millis) {
 
   static  uint32_t last_watchdog_millis = 0;
@@ -239,7 +257,7 @@ static void CRSF_reception_watchdog_task(uint32_t actual_millis) {
   if (actual_millis-last_watchdog_millis <10) return; // Wait for 10ms of no link or last restart attempt
   // No link for more than 10ms - restart CRSF UART RX
   last_watchdog_millis = actual_millis;
-  crsfSerial->restartUARTRX(&huart1);
+  crsfSerial->restartUARTRX(UART_CRSF_HANDLE);
   crsfSerialRestartRX_counter++;
 }
 
@@ -261,6 +279,7 @@ static void telemetry_transmission_task(uint32_t actual_millis) {
   telemetry_carousel++;
   telemetry_carousel %= CAROUSEL_MAX;
 }
+#endif
 
 static void pwm_update_task(uint32_t actual_millis) {
 
@@ -300,6 +319,7 @@ static void error_handling_task(void) {
 }
 
 
+#if UART_ROLE_CRSF != UART_ROLE_NONE
 static void telemetrySendCellVoltage(uint8_t cellId, float voltage) {
   static  uint8_t payload[3];
   
@@ -309,6 +329,7 @@ static void telemetrySendCellVoltage(uint8_t cellId, float voltage) {
   memcpy(&payload[1], &voltage_be, sizeof(voltage_be));
   crsf.queuePacket(CRSF_SYNC_BYTE, 0x0e, payload, sizeof(payload));
 }
+#endif
 
 static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_length) {
   static TIM_OC_InitTypeDef sConfigOC={0,0,0,0,0,0,0};
@@ -350,6 +371,7 @@ void setupBaroSensor(){   // SPL06-001 sensor version
 }
 
 
+#if UART_ROLE_CRSF != UART_ROLE_NONE
 void telemetrySendBaroAltitude(float altitude)
 {
   crsf_sensor_baro_altitude_t crsfBaroAltitude = { 0 , 0 };
@@ -369,6 +391,7 @@ void telemetrySendVario( float verticalspd)
   crsfVario.verticalspd = htobe16((int16_t)(verticalspd*100.0));
   crsf.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_VARIO, &crsfVario, sizeof(crsfVario));
 }
+#endif
 
 
 char* floatToString( char* buffer, size_t bufferSize, float value, uint8_t wholePlaces , uint8_t decimalPlaces) {
@@ -410,7 +433,9 @@ void baroSerialDisplayTask(uint32_t millis_now){
   printf("Approx altitude ASL = %3dm ; Altitude AGL = %sm\n\r", (int)filt_alt_ASL, float_string_buffer);
   floatToString(float_string_buffer, sizeof(float_string_buffer), filt_vario);
   printf("Vario = %sm/s\n\r", float_string_buffer);
-  serial2.write((uint8_t*)"\n\r", 2);
+#if UART_ROLE_DEBUG != UART_ROLE_NONE
+  serialDebug.write((uint8_t*)"\n\r", 2);
+#endif
 }
 
 void baroProcessingTask(uint32_t millis_now){
@@ -445,6 +470,7 @@ void baroProcessingTask(uint32_t millis_now){
 }
 
 
+#if UART_ROLE_CRSF != UART_ROLE_NONE
 void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS)
 {
   crsf_sensor_gps_t crsfGps = { 0 };
@@ -458,14 +484,18 @@ void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS)
   crsfGps.satellites = (uint8_t)(pGNSS->getSIV() & 0xFF);
   crsf.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_GPS, &crsfGps, sizeof(crsfGps));
 }
+#endif
 
 
 void gnss_module_init(void) {
   printf("\n>>> Initializing GNSS Module...\n\r");
-    
+#if UART_ROLE_GNSS == UART_ROLE_NONE
+    gnss_initialized = false;
+    return;
+#endif
     // This call blocks for ~1-2 seconds while waiting for module response
     // Safe to call during initialization
-    gnss_initialized = gnss_init(&huart3, &gnssSerialWrapper);
+    gnss_initialized = gnss_init(UART_GNSS_HANDLE, &serialGnss);
     if (gnss_initialized) {
       printf(">>> GNSS Module: INITIALIZED OK\n\r");
       printf(">>> Waiting for satellite fix (may take 30-60 seconds on cold start)...\n\r");

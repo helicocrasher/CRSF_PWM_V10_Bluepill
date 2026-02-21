@@ -144,12 +144,10 @@ uint8_t* get_uart_rx_buffer();
 ### In HAL_UART_TxCpltCallback
 ```cpp
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART1) {
-        // UART1 handling
-        crsfSerialWrapper.set_ready_TX();  // Mark ready if nothing to send
-        // or pull next chunk:
-        if (crsfSerialWrapper.TX_callBackPull() == 0) {
-            crsfSerialWrapper.set_ready_TX();
+    if (huart->Instance == UART_CRSF_INSTANCE) {
+        // CRSF UART handling
+        if (serialCrsf.TX_callBackPull() == 0) {
+            serialCrsf.set_ready_TX();
         }
     }
 }
@@ -158,9 +156,9 @@ extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 ### In HAL_UART_RxCpltCallback
 ```cpp
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART1) {
-        crsfSerialWrapper.set_ready_RX();
-        crsfSerialWrapper.receive();  // Push data to FIFO and re-arm RX
+    if (huart == UART_CRSF_HANDLE) {
+        serialCrsf.set_ready_RX();
+        serialCrsf.receive();  // Push data to FIFO and re-arm RX
     }
 }
 ```
@@ -170,16 +168,17 @@ extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 ### Basic Initialization
 ```cpp
 #include "mySerial.h"
+#include "uart_config.h"
 
 // Create serial instance
-mySerial debug_serial;
+mySerial serialDebug;
 
 void setup() {
-    // Initialize with UART2, 256-byte FIFO, 4-byte TX buffer
-    debug_serial.init(&huart2, 256, 4);
+    // Initialize with role-based UART selection
+    serialDebug.init(UART_DEBUG_HANDLE, UART_DEBUG_FIFO_SIZE, UART_DEBUG_TX_BUF_SIZE);
     
     // Check if initialized successfully
-    if (!debug_serial.isInitialized()) {
+    if (!serialDebug.isInitialized()) {
         // Handle initialization error
         return;
     }
@@ -190,7 +189,7 @@ void setup() {
 ```cpp
 void send_message() {
     uint8_t tx_data[] = "Hello, UART!";
-    size_t written = debug_serial.write(tx_data, sizeof(tx_data) - 1);
+    size_t written = serialDebug.write(tx_data, sizeof(tx_data) - 1);
     
     if (written > 0) {
         printf("Sent %d bytes\n", written);
@@ -202,10 +201,10 @@ void send_message() {
 ```cpp
 void read_message() {
     uint8_t rx_data[16];
-    size_t available = debug_serial.available();
+    size_t available = serialDebug.available();
     
     if (available > 0) {
-        size_t bytes_read = debug_serial.read(rx_data, sizeof(rx_data));
+        size_t bytes_read = serialDebug.read(rx_data, sizeof(rx_data));
         // Process received data
     }
 }
@@ -215,7 +214,7 @@ void read_message() {
 ```cpp
 void ensure_sent() {
     // Wait up to 1000ms for all data to be sent
-    int8_t result = debug_serial.flush(1000);
+    int8_t result = serialDebug.flush(1000);
     
     if (result == 0) {
         printf("All data sent successfully\n");
@@ -228,7 +227,7 @@ void ensure_sent() {
 ### Recovery / Restart RX
 ```cpp
 void recover_communication() {
-    debug_serial.restart_RX();
+    serialDebug.restart_RX();
     printf("RX restarted, ready for new data\n");
 }
 ```
