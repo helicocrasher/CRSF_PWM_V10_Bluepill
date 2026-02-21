@@ -96,8 +96,12 @@ int STM32Serial::available(void) {
 }
 
 void STM32Serial::flush(void) {
-    if (!serialPort) return;
-    // myHalfSerial_X may not have explicit flush, but write should be non-blocking
+    if (!serialPort) 
+    while (serialPort->send() > 0) {
+        // Wait until all data is sent
+    }
+return;
+    // mySerial is non-blocking, if there is need for a blocking flush, that should do the job
 }
 
 // ============================================================================

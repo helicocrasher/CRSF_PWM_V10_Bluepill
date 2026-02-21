@@ -7,14 +7,10 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 */
 /*
  * platform_abstraction.cpp
- * STM32 implementation of Stream abstraction and timing functions
+ * STM32 implementation of Stream abstraction wrapping mySerial
  */
 
 #include "platform_abstraction.h"
-//#include "stm32g031xx.h"
-//#include "stm32g0xx_hal_adc.h"
-//#include "stm32g0xx_hal_i2c.h"
-//#include "stm32g0xx_hal_uart.h"
 #include "mySerial.h"
 #include "stm32f103xb.h"
 #include <cstdint>
@@ -22,7 +18,7 @@ long map(long x, long in_min, long in_max, long out_min, long out_max) {
 #include <sys/_intsup.h>
 
 
-// Global pointer for HAL callback
+// Global pointer for UART1 receive callback
 STM32Stream* g_uartStream = nullptr;
 
 extern UART_HandleTypeDef huart1, huart2, huart3;
@@ -65,44 +61,42 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 }
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+
+    if (huart->Instance == USART1) {
+        ready_TX_UART1 = 1; 
+    }
     if (huart->Instance == USART2) {
         if (serial2.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
                                             // otherwise it might disturb other time critical interrupt routines
             ready_TX_UART2 = 1; // No more data to send, mark UART2 as ready
         } 
     }
-    if (huart->Instance == USART1) {
-        ready_TX_UART1 = 1; 
-    }
     if (huart->Instance == USART3 ){
-        if (gnssSerial.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
-//        {   
+//        if (gnssSerial.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
+        {   
             ready_TX_UART3 = 1;
         }
     }
 }
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart == &huart1 && g_uartStream) {
-        // Pass received byte to STM32Stream
-        if (huart->ErrorCode == HAL_UART_ERROR_ORE) {
-            // Handle overrun error
-            __HAL_UART_CLEAR_OREFLAG(&huart1);
-        RX1_overrun++;      
-        }
-        g_uartStream->onRxByte(g_uartStream->_rxBuf[g_uartStream->_head]);
-        // Re-arm RX interrupt for next byte
-        HAL_UART_Receive_IT(huart, &g_uartStream->_rxBuf[g_uartStream->_head], 1);
+    extern mySerial crsfSerialWrapper;
+    extern mySerial gnssSerialWrapper;
+    
+    if (huart == &huart1) {
+        ready_RX_UART1 = 1;
+        // push the received data to this RX FIFO and Re-arm RX reception for next byte
+        crsfSerialWrapper.receive();
     }
     if (huart == &huart2) {
         ready_RX_UART2 = 1;
-        // push the received data to this RX FIFO and Re-arm RX receptiont for next byte
+        // push the received data to this RX FIFO and Re-arm RX reception for next byte
         serial2.receive();
     }
     if (huart == &huart3) {
         ready_RX_UART3 = 1;
-        // push the received data to this RX FIFO and Re-arm RX receptiont for next byte
-        gnssSerial.receive();
+        // push the received data to this RX FIFO and Re-arm RX reception for next byte
+        gnssSerialWrapper.receive();
     }
 }
 
@@ -113,106 +107,50 @@ extern "C" void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
         i2cWriteComplete = 1;
     }
 }
-/*
-extern "C" void stm32stream_rearm_rx_irq(void) {
-    if (g_uartStream) {
-        // Re-enable interrupt for next byte (safe for C)
-        HAL_UART_Receive_IT(g_uartStream->_huart, &g_uartStream->_rxBuf[g_uartStream->_head], 1);
-    }
-}
-*/
 
-STM32Stream::STM32Stream(UART_HandleTypeDef *huart) 
-    : _huart(huart), _head(0), _tail(0) 
+
+STM32Stream::STM32Stream(mySerial *serial) 
+    : _serial(serial) 
 {
-    if (huart == &huart1 && g_uartStream) {
-        // Pass received byte to STM32Stream
-        if (huart->ErrorCode == HAL_UART_ERROR_ORE) {
-            // Handle overrun error
-            __HAL_UART_CLEAR_OREFLAG(&huart1);
-            RX1_overrun++; 
-        }
-    }
-    g_uartStream = this;
-    // Enable UART RX interrupt
-    HAL_UART_Receive_IT(_huart, &_rxBuf[0], 1); // 2 calls required to reliably start CRSF UART RX
-    HAL_UART_Receive_IT(_huart, &_rxBuf[0], 1);
+    // Nothing to do - mySerial is already initialized
 }
 
 int STM32Stream::restartUARTRX(UART_HandleTypeDef *huart) {
-    _huart = huart;
-    _head = 0;
-    _tail = 0;
-    // Enable UART RX interrupt
-    HAL_UART_Receive_IT(_huart, &_rxBuf[0], 1); // 2 calls required to reliably restart CRSF UART RX
-    HAL_UART_Receive_IT(_huart, &_rxBuf[0], 1);
-    return 0;
+    if (_serial) {
+        return _serial->restart();  // Use mySerial's restart method
+    }
+    return -1;
 }
 
 int STM32Stream::available() {
-    // Calculate available bytes in circular buffer
-    uint16_t head = _head;
-    uint16_t tail = _tail;
-    
-    if (head >= tail) {
-        return head - tail;
-    } else {
-        return RX_BUFFER_SIZE - (tail - head);
+    if (_serial) {
+        return _serial->available();  // Delegate to mySerial
     }
+    return 0;
 }
 
 int STM32Stream::read() {
-    if (_tail == _head) {
-        return -1;  // No data available
+    if (_serial && _serial->available() > 0) {
+        uint8_t byte = 0;
+        if (_serial->read(&byte, 1) > 0) {
+            return byte;
+        }
     }
-    
-    uint8_t b = _rxBuf[_tail];
-    _tail = (_tail + 1) % RX_BUFFER_SIZE;
-    return b;
+    return -1;  // No data available
 }
 
 size_t STM32Stream::write(uint8_t b) {
-
-    if (ready_TX_UART1==  1 ) { // Non-blocking version - working
-      ELRS_TX_count+=1;  
-      memcpy(&UART1_TX_Buffer[0], &b, 1);
-      HAL_UART_Transmit_IT(_huart, (uint8_t*)UART1_TX_Buffer, 1); 
-      ready_TX_UART1 = 0;
-      return 1;
+    if (_serial) {
+        return _serial->write(&b, 1);  // Delegate to mySerial
     }
-    else {
-        return 0;
-    }
+    return 0;
 }
 
 size_t STM32Stream::write(const uint8_t *buf, size_t len) {
-    if (ready_TX_UART1==  1 ) { // Non-blocking version - does work
-      // Limit the number of bytes to the size of UART1_TX_Buffer to avoid overflow
-      size_t txLen = len;
-      if (txLen > sizeof(UART1_TX_Buffer)) {
-          txLen = sizeof(UART1_TX_Buffer);
-      }
-      ELRS_TX_count += txLen;
-      memcpy(&UART1_TX_Buffer[0], buf, txLen);
-      HAL_UART_Transmit_IT(_huart, (uint8_t*)UART1_TX_Buffer, txLen);
-      ready_TX_UART1 = 0;
-      return txLen;
+    if (_serial) {
+        return _serial->write(buf, len);  // Delegate to mySerial
     }
-    else {
-        return 0;
-    }
+    return 0;
 }
 
-void STM32Stream::onRxByte(uint8_t byte) {
-    uint16_t next_head = (_head + 1) % RX_BUFFER_SIZE;
-    
-    // Prevent buffer overflow - drop oldest byte if buffer is full
-    if (next_head != _tail) {
-        _rxBuf[_head] = byte;
-        _head = next_head;
-    }
-}
 
-//uint32_t platform_millis() {
-//    return HAL_GetTick();
-//}

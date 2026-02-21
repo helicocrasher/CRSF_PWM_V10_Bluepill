@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/_intsup.h>
 #include "../AlfredoCRSF/src/AlfredoCRSF.h"
 #include "platform_abstraction.h"
 
@@ -50,8 +51,6 @@ extern "C" {
 
 void gnss_module_init(void);
 void gnss_module_update(uint32_t millis_now);
-extern mySerial gnssSerial;
-static STM32Serial gnssSerialWrapper(&gnssSerial);
 UbloxGNSSWrapper *pGNSS = nullptr;
 
 
@@ -68,7 +67,7 @@ static void telemetrySendCellVoltage(uint8_t cellId, float voltage);
 void telemetrySendBaroAltitude(float altitude);
 void telemetrySendVario( float verticalspd);
 void telemetrySendGps_int(UbloxGNSSWrapper *pGNSS);
-void floatToString( char* buffer, size_t bufferSize,float value);
+char* floatToString( char* buffer, size_t bufferSize,float value, uint8_t wholePlaces=3 , uint8_t decimalPlaces=2);
 
 
 
@@ -101,8 +100,13 @@ static void user_pwm_setvalue(uint8_t pwm_channel, uint16_t PWM_pulse_length);
 int8_t send_UART2(void);
 
 extern ADC_HandleTypeDef hadc1;
-mySerial serial2, gnssSerial;
-STM32Stream* crsfSerial = nullptr;  // Will be initialized in user_init()
+mySerial serial2;                       // Debug UART2
+mySerial crsfSerialWrapper;             // UART1 - wrapped by STM32Stream for AlfredoCRSF
+mySerial gnssSerialWrapper;             // UART3 - wrapped by STM32Stream for ublox_gnss
+
+STM32Stream* crsfSerial = nullptr;      // UART1 wrapper - initialized in user_init()
+STM32Stream* gnssSerial = nullptr;      // UART3 wrapper - initialized in gnss_init()
+
 AlfredoCRSF crsf;
 volatile bool ready_TX_UART2 = 1;
 volatile bool ready_RX_UART2 = 1;
@@ -134,7 +138,7 @@ static uint32_t GND_alt_count=0;
 // GNSS module state variables
 static bool gnss_initialized = false;
 static uint32_t gnss_last_update_time = 0;
-// static const uint32_t GNSS_UPDATE_INTERVAL_MS = 100;  // Update every 100ms (10Hz) - reserved for future use
+//static const uint32_t GNSS_UPDATE_INTERVAL_MS = 2500;  // Update every 100ms (10Hz) - reserved for future use
 static uint32_t gnss_last_print_time = 0;
 // static const uint32_t GNSS_PRINT_INTERVAL_MS = 2000;  // Print every 2 seconds - reserved for future use
 
@@ -142,14 +146,19 @@ static uint32_t gnss_last_print_time = 0;
 void user_init(void)  // same as the "arduino setup()" function
 {
   HAL_Delay(5);
-  serial2.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2,256, 16  );
-  crsfSerial = new STM32Stream(&huart1); // Ensure UART is initialized before creating STM32Stream
+  serial2.init(&huart2, (bool*)&ready_TX_UART2, (bool*)&ready_RX_UART2, 256, 16);
+  
+  // Initialize UART1 (CRSF) mySerial wrapper and STM32Stream
+  crsfSerialWrapper.init(&huart1, (bool*)&ready_TX_UART1, (bool*)&ready_RX_UART1, 256, 64);
+  crsfSerial = new STM32Stream(&crsfSerialWrapper);
   crsf.begin(*crsfSerial);
+  
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_Delay(20);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_buffer, 2);
 //  setupBaroSensor();
   gnss_module_init();
+  HAL_Delay(20);
 }
 
 
@@ -161,7 +170,7 @@ void user_loop_step(void) // same as the "arduino loop()" function
   crsf.update();
   CRSF_reception_watchdog_task(actual_millis);
   pwm_update_task(actual_millis);
-//  LED_and_debugSerial_task(actual_millis);
+  LED_and_debugSerial_task(actual_millis);
   analog_measurement_task(actual_millis);
 //  baroProcessingTask(actual_millis);
 //  baroSerialDisplayTask(actual_millis);
@@ -169,9 +178,10 @@ void user_loop_step(void) // same as the "arduino loop()" function
   gnssDisplayTask(actual_millis);
   telemetry_transmission_task(actual_millis);
   error_handling_task();
-  serial2.updateSerial();
+  serial2.send(); // Trigger sending of any pending data in serial2 FIFO
+  gnssSerialWrapper.send(); // Trigger sending of any pending data in gnssSerialWrapper FIFO
   main_loop_cnt++;
-//  HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
+  HAL_Delay(2)  ; // Small delay to prevent CPU hogging - adjust as needed for timing
 }
 
 void gnssUpdateTask(uint32_t actual_millis) {
@@ -180,13 +190,12 @@ void gnssUpdateTask(uint32_t actual_millis) {
     last_update_time = actual_millis;
     if (gnss_initialized && pGNSS) {
       pGNSS->update();
-//      gnssSerial.updateSerial();
   }
 }
 
 void gnssDisplayTask(uint32_t actual_millis) {
   static uint32_t last_print_time = 0;
-  static char float_string_buffer[8];
+  static char float_string_buffer[16];
 
   if ((actual_millis - last_print_time) <500) return; // Print every 500ms
 
@@ -195,20 +204,11 @@ void gnssDisplayTask(uint32_t actual_millis) {
   if (pGNSS) {
     printf("GPS %s , ",pGNSS->hasValidFix() ? "Valid Fix" : "   No Fix");
     printf("Sats: %2d , ", pGNSS->getSIV());
-    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLatitude()/10000000.0f);
-    printf("Latitude: %s , ", float_string_buffer);
-    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLongitude()/10000000.0f);
-    printf("Longitude: %s , ", float_string_buffer);
-    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getAltitudeMSL()/1000.0f);
-    printf("Altitude MSL: %s m",   float_string_buffer);
-    floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getGroundSpeed()*mmsTokmh); // Convert mm/s to km/h
-    printf(", Speed: %s km/h", float_string_buffer);
-   // printf("Altitude MSL: %3.2f m, SIV: %d, Speed: %.2f km/h\n\r", GNSS_Altitude_MSL/1000.0f, gnss_get_siv(), gnss_get_ground_speed()*mmsTokmh); 
-
-   printf("\n\r");
-
-
-
+    printf("Latitude: %s , ", floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLatitude()/10000000.0f,2,5));
+    printf("Longitude: %s , ", floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getLongitude()/10000000.0f,3,5));
+    printf("Altitude MSL: %s m", floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getAltitudeMSL()/1000.0f));
+    printf(", Speed: %s km/h", floatToString(float_string_buffer, sizeof(float_string_buffer), pGNSS->getGroundSpeed()*mmsTokmh));
+    printf("\n\r");
   }
 } 
 
@@ -294,7 +294,7 @@ static void LED_and_debugSerial_task(uint32_t actual_millis) {
   uint16_t ch1 = crsf.getChannel(1);
   uint16_t ch2 = crsf.getChannel(2);
 
-  if (actual_millis - last_debugTerm_millis < 200) return;
+  if (actual_millis - last_debugTerm_millis < 500) return;
   last_debugTerm_millis = actual_millis;
 //  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_14 );        //TARGET_MATEK
   HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2 ); // TARGET_BluePill
@@ -379,18 +379,29 @@ void telemetrySendVario( float verticalspd)
 }
 
 
-void floatToString( char* buffer, size_t bufferSize,float value) {
-   int32_t intValue = (int32_t)(value * 100.0 + 0.5); // Scale to preserve two decimal places
-   if (intValue > 999999) intValue = 999999; // Cap to max displayable value
-   if (intValue < -99999) intValue = -99999; // Cap to min displayable value
-   if(intValue < 0)     snprintf(buffer, bufferSize, "%06ld", (long int)intValue);
-   else                 snprintf(buffer, bufferSize, "%6ld" , (long int)intValue);
-    buffer[7] = '\0'; // Ensure null termination
-    buffer[6] = buffer[5]; // Move last digit to position 6
-    buffer[5] = buffer[4]; // Move second last digit to position 5
-    buffer[4] = '.'; // Insert decimal point at position 4
-    if(buffer[5] == ' ') buffer[5] = '0'; // Replace space with '0' if needed
-    if(buffer[3] == ' ') buffer[3] = '0'; // Replace space with '0' if needed
+char* floatToString( char* buffer, size_t bufferSize, float value, uint8_t wholePlaces , uint8_t decimalPlaces) {
+  float decimalFactor = pow(10, decimalPlaces); 
+  int32_t inputLimit = pow(10, wholePlaces+decimalPlaces) - 1; // Maximum whole number based on specified places
+  int32_t intValue = (int32_t)(value * decimalFactor + 0.5f); // Scale to preserve two decimal places
+   char FormatStr[12], tempBuffer[12];
+
+   
+   if (intValue > inputLimit) intValue =  inputLimit; // Cap to max displayable value
+   if (intValue < -inputLimit) intValue = -inputLimit; // Cap to min displayable value
+   if(intValue > 0)  strcpy(FormatStr, " %");
+   else              strcpy(FormatStr, "%0");
+  strcat(FormatStr, itoa(wholePlaces + decimalPlaces, tempBuffer, 10)); // Total width
+  strcat(FormatStr, "ld"); // Format for long int
+  snprintf(buffer, bufferSize, FormatStr, (long int)intValue);
+ //  for int = wholePlaces+1
+   buffer[wholePlaces+decimalPlaces+2] = '\0'; // Ensure null termination
+  for (int i = wholePlaces+decimalPlaces+1; i > wholePlaces+1;  i--) {
+   buffer[i] = buffer[i-1]; // Move last digit to position 6
+  } 
+   buffer[wholePlaces+1] = '.'; // Insert decimal point at position 4
+   if(buffer[5] == ' ') buffer[5] = '0'; // Replace space with '0' if needed
+   if(buffer[3] == ' ') buffer[3] = '0'; // Replace space with '0' if needed
+   return buffer;
 }
 
 
@@ -486,10 +497,16 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_r
         return false;
     }
     
-    gnssSerial.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
-    pSerial = &gnssSerialWrapper;
+    // Initialize the mySerial wrapper for UART3
+    gnssSerialWrapper.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
     
-    pGNSS = new UbloxGNSSWrapper(gnssSerialWrapper);
+    // Create STM32Stream wrapper if not already created
+    if (!gnssSerial) {
+        gnssSerial = new STM32Stream(&gnssSerialWrapper);
+    }
+    
+    // Create the UbloxGNSSWrapper with the STM32Stream
+    pGNSS = new UbloxGNSSWrapper(*gnssSerial);
     if (!pGNSS) {
         return false;
     }

@@ -14,13 +14,13 @@ public:
     void init(UART_HandleTypeDef *huart, bool *huart_tx_ready, bool *huart_rx_ready, size_t fifo_buffer_size = 256, size_t tx_UART_buffer_size = 4);
   
     size_t write(const uint8_t *input_array, size_t len);
-    int8_t updateSerial();
-	size_t read(uint8_t *output_array, size_t len);
+ 	size_t read(uint8_t *output_array, size_t len);
     size_t TX_callBackPull();
     size_t available();
 	size_t fifo_reset(void);
 	int8_t restart();
 	int8_t receive();
+    int8_t send();
 	uint8_t* get_uart_rx_buffer();
 
 private:
@@ -45,7 +45,8 @@ private:
 
     void fifo_push(bool isTX, uint8_t c);
     uint8_t fifo_pop(bool isTX);
-    int8_t send();
+    int8_t updateSerial();
+    
 
 };
 #endif // __cplusplus

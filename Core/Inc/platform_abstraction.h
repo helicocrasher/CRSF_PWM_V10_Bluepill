@@ -17,27 +17,34 @@ void Serial2Debug_println(char*  msg) ;
 
 
 #ifdef __cplusplus
+// Forward declaration
+class mySerial;
+
 // C++ only - include stm32_arduino_compatibility for Stream class
 #include "stm32_arduino_compatibility.h"
 
-// STM32 UART implementation with circular buffer
+// STM32Stream wrapper around mySerial
 // Inherits Stream from stm32_arduino_compatibility.h
+// Provides a unified interface for both AlfredoCRSF and ublox_gnss
 class STM32Stream : public Stream {
 public:
-    STM32Stream(UART_HandleTypeDef *huart);
+    // Constructor wraps an existing mySerial instance
+    STM32Stream(mySerial *serial);
+    
+    // Reinitialize the underlying mySerial (for RX restart)
     int restartUARTRX(UART_HandleTypeDef *huart);
+    
+    // Stream interface - delegates to mySerial
     int available() override;
     int read() override;
     size_t write(uint8_t b) override;
     size_t write(const uint8_t *buf, size_t len) override;
-    // Called from HAL interrupt callback
-    void onRxByte(uint8_t byte);
-    // Make these public for C access
-    UART_HandleTypeDef *_huart;
-    static const uint16_t RX_BUFFER_SIZE = 256;
-    uint8_t _rxBuf[256];
-    volatile uint16_t _head;
-    volatile uint16_t _tail;
+    
+    // Access to underlying mySerial for advanced operations
+    mySerial* getSerial() { return _serial; }
+
+private:
+    mySerial *_serial;  // Wrapped mySerial instance
 };
 #endif
 // Only visible for C++

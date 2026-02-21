@@ -112,11 +112,7 @@ public:
      */
     int32_t getAltitudeMSL(void);
     
-    /**
-     * @brief Get altitude above mean sea level (cached)
-     * @return Altitude in millimeters
-     */
-    int32_t getAltitude(void);
+
     
     /**
      * @brief Get ground speed (cached)
@@ -150,6 +146,7 @@ public:
 
 private:
     SFE_UBLOX_GNSS myGNSS;
+    Stream *serialPort;  // Store the serial port reference
     
     // Cached data (updated by update())
     int32_t cachedLatitude;

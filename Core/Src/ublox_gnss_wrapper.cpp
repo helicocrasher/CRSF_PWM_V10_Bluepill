@@ -7,22 +7,21 @@
 #include "stm32_arduino_compatibility.h"
 
 UbloxGNSSWrapper::UbloxGNSSWrapper(Stream &serialPort) 
-    : cachedLatitude(0), cachedLongitude(0), cachedAltitude(0),
+    : serialPort(&serialPort), cachedLatitude(0), cachedLongitude(0), cachedAltitude(0),
       cachedSpeed(0), cachedHeading(0), cachedSIV(0), 
       cachedValidFix(false), lastUpdateTime(0) {
-    // Initialize the underlying GNSS module with serial port
-    (void)serialPort; // Will be used when begin() is called
+    // Store the serial port reference for later use
 }
 
 bool UbloxGNSSWrapper::begin(uint16_t maxWait) {
     // This is a blocking call, safe to use during initialization
-    // Get the serial port from the global pSerial pointer
-    if (!pSerial) {
+    // Use the stored serial port reference
+    if (!serialPort) {
         return false; // Serial port not initialized
     }
     
     // Begin communication with GNSS module
-    bool success = myGNSS.begin(*pSerial, maxWait, true);
+    bool success = myGNSS.begin(*serialPort, maxWait, true);
     
     if (success) {
         // Configure for non-blocking operation
@@ -93,10 +92,6 @@ int32_t UbloxGNSSWrapper::getLongitude(void) {
 }
 
 int32_t UbloxGNSSWrapper::getAltitudeMSL(void) {
-    return cachedAltitude;
-}
-
-int32_t UbloxGNSSWrapper::getAltitude(void) {
     return cachedAltitude;
 }
 
