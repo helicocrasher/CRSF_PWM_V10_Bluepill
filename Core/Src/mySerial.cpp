@@ -30,12 +30,14 @@ void mySerial::init(UART_HandleTypeDef *huart, bool *huart_tx_ready, bool *huart
     m_rx_fifo = new uint8_t[m_fifo_size];
     m_uart_tx_buffer = new uint8_t[m_uart_tx_buffer_size];
     m_uart_rx_buffer = new uint8_t[m_uart_rx_buffer_size];
+    
+    // Abort any existing receive operation to prevent conflicts
+    HAL_UART_AbortReceive(m_huart);
+    
     // Start UART receive interrupt - Wait for one character
-
     *m_huart_rx_ready = false;
     HAL_UART_Receive_IT(m_huart, m_uart_rx_buffer, m_uart_rx_buffer_size);
     HAL_UART_Receive_IT(m_huart, m_uart_rx_buffer, m_uart_rx_buffer_size);
-    //
 }
 
 int8_t mySerial::restart(){
@@ -73,16 +75,9 @@ size_t mySerial::fifo_free_space(bool m_isTXfifo)  {
 			 
 
 size_t mySerial::fifo_data_length(bool m_isTXfifo) {
-    if (m_isTXfifo){
-        if (m_tx_fifo_head >= m_tx_fifo_tail)
-                return m_tx_fifo_head - m_tx_fifo_tail;
-        else    return m_fifo_size - (m_tx_fifo_tail - m_tx_fifo_head);
-    }
-    else {
-        if (m_rx_fifo_head >= m_rx_fifo_tail)
-                return m_rx_fifo_head - m_rx_fifo_tail;
-        else    return m_fifo_size - (m_rx_fifo_tail - m_rx_fifo_head);
-    } 
+    if (m_isTXfifo) return (m_tx_fifo_head - m_tx_fifo_tail + m_fifo_size) % m_fifo_size;
+    else            return (m_rx_fifo_head - m_rx_fifo_tail + m_fifo_size) % m_fifo_size;
+
 }
 
 void mySerial::fifo_push(bool m_isTXfifo, uint8_t c) {

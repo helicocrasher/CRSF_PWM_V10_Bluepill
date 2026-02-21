@@ -32,8 +32,13 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_r
         return false;
     }
     
-    // Initialize the mySerial wrapper
-    gnssSerialWrapper.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
+    // Initialize the mySerial wrapper (only needs to be done once)
+    // Check if the UART handle matches to avoid re-initialization
+    static bool initialized = false;
+    if (!initialized) {
+        gnssSerialWrapper.init(huart3, huart_TX_ready, huart_RX_ready, 512, 8);
+        initialized = true;
+    }
     
     // Create STM32Stream wrapper if not already created
     if (!gnssSerial) {
@@ -46,7 +51,7 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_r
         return false;
     }
     
-    if (!pGNSS->begin(2000)) {
+    if (!pGNSS->begin(100)) {
         printf("GNSS init failed\n\r");
         return false;
     }

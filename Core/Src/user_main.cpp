@@ -158,7 +158,7 @@ void user_init(void)  // same as the "arduino setup()" function
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_buffer, 2);
 //  setupBaroSensor();
   gnss_module_init();
-  HAL_Delay(20);
+//  HAL_Delay(20);
 }
 
 
@@ -488,7 +488,7 @@ void gnss_module_init(void) {
       printf( ">>>  3. GNSS module is powered and connected\r\n");
       printf( ">>>  4. RX antenna is connected\r\n\r\n");
     }
-    delay(1000); // Small delay to ensure UART messages are sent before any further processing
+    delay(50); // Small delay to ensure UART messages are sent before any further processing
     delay(1 );
 }
 
@@ -511,7 +511,7 @@ bool gnss_init(UART_HandleTypeDef *huart3, bool *huart_TX_ready,bool *huart_RX_r
         return false;
     }
     
-    if (!pGNSS->begin(2000)) {
+    if (!pGNSS->begin(100)) {  // block this amount of millis 100ms max during initialization
         printf("GNSS init failed\n\r");
         return false;
     }

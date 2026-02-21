@@ -35,7 +35,8 @@ extern volatile uint32_t adcValue, ADC_count;
 extern volatile uint8_t isADCFinished;
 extern volatile uint8_t i2cWriteComplete;
 extern mySerial serial2;
-extern mySerial gnssSerial;
+extern mySerial crsfSerialWrapper;
+extern mySerial gnssSerialWrapper;
 
 char UART1_TX_Buffer[64];
 
@@ -72,17 +73,14 @@ extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
         } 
     }
     if (huart->Instance == USART3 ){
-//        if (gnssSerial.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
-        {   
+        if (gnssSerialWrapper.TX_callBackPull()==0) { // get more data to send if available in FIFO ! make sure to lower interrupt Prio 
+//        {   
             ready_TX_UART3 = 1;
         }
     }
 }
 
 extern "C" void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    extern mySerial crsfSerialWrapper;
-    extern mySerial gnssSerialWrapper;
-    
     if (huart == &huart1) {
         ready_RX_UART1 = 1;
         // push the received data to this RX FIFO and Re-arm RX reception for next byte

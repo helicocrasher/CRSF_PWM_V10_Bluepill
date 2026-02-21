@@ -28,8 +28,8 @@ bool UbloxGNSSWrapper::begin(uint16_t maxWait) {
         // Enable automatic PVT reporting at 1Hz
         myGNSS.setAutoPVT(true, maxWait);
         
-        // Set measurement rate to 1000ms (1Hz)
-        myGNSS.setMeasurementRate(1000, maxWait);
+        // Set measurement rate to 500ms (2Hz)
+        myGNSS.setMeasurementRate(500, maxWait);
         
         // Configure UART1 output to UBX only (reduces baudrate)
         myGNSS.setUART1Output(COM_TYPE_UBX, maxWait);
